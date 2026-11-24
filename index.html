@@ -23,6 +23,9 @@
   #gameControls{position:fixed;top:8px;left:8px;z-index:5;display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:calc(100% - 16px);font-size:12px;color:#fff}
   #gameControls button{flex:none;padding:7px 10px;min-height:32px;background:#19212b;color:#fff;border:1px solid #8392a3;letter-spacing:0}
   #gameControls button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  #gameKeyboard{width:155px;min-height:32px;box-sizing:border-box;padding:5px 8px;font:inherit;color:#fff;background:#19212b;border:1px solid #8392a3;border-radius:3px}
+  #gameKeyboard::placeholder{color:#d5dce6}
+  #gameKeyboard:focus{outline:2px solid #82ddab;outline-offset:2px}
   #keyStatus{background:#19212b;padding:6px 8px;border-radius:3px;pointer-events:none}
   #gameControls[hidden],#gameControls [hidden]{display:none}
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
@@ -65,14 +68,16 @@
 </style>
 </head>
 <body>
-<canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. 방향키(↑ ↓ ← →)로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
+<canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. WASD 또는 방향키로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
 <div id="gameControls" role="group" aria-label="게임 조작">
-  <button type="button" id="keyboardStart">키보드 조작 시작</button>
+  <label for="gameKeyboard">키보드 조작</label>
+  <input id="gameKeyboard" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" lang="en" aria-describedby="keyboardHelp" placeholder="여기를 클릭하고 조작" />
+  <span id="keyboardHelp" class="sr-only">WASD 또는 방향키 이동, Space 대시, F 획득. Tab으로 다른 요소에 이동할 수 있습니다.</span>
   <button type="button" id="dashGame">회피 (Space)</button>
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
   <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v10</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v11</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -136,7 +141,13 @@ function inRect(q,r){ return q.x>=r.x&&q.x<=r.x+r.w&&q.y>=r.y&&q.y<=r.y+r.h; }
 const el=id=>document.getElementById(id);
 const menuEl=el('menu');
 let menuOpen=false;
-function focusGame(){ try{cv.focus({preventScroll:true});}catch(err){$(cv).trigger('focus');} }
+function focusGame(){
+  if(menuOpen||invOpen)return;
+  $('#gameControls').prop('hidden',false);
+  const field=el('gameKeyboard');
+  if(MOBILE&&document.activeElement!==field)return;
+  try{field.focus({preventScroll:true});}catch(err){$(field).trigger('focus');}
+}
 function setMenu(v){
   clearGameKeys(); menuOpen=v; $(menuEl).toggleClass('on',v);
   if(v) $('#close').trigger('focus');
@@ -605,106 +616,72 @@ init(false);
 const keys=Object.create(null),keyPulse=Object.create(null);
 const moveKeys=['arrowup','arrowdown','arrowleft','arrowright'];
 function isMoveDown(k){return !!keys[k]||(keyPulse[k]||0)>performance.now();}
-const gameKeys=[...moveKeys,' ','f','i','p','escape','k'];
 function getGameKey(e){
-  const ev=e.originalEvent||e;
-  const map={arrowup:'arrowup',arrowdown:'arrowdown',arrowleft:'arrowleft',arrowright:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright','↑':'arrowup','↓':'arrowdown','←':'arrowleft','→':'arrowright',' ':' ',space:' ',spacebar:' ',f:'f',i:'i',p:'p',k:'k',escape:'escape',esc:'escape','ㄹ':'f','ᄅ':'f','ㅑ':'i','ᅣ':'i','ㅔ':'p','ᅦ':'p','ㅖ':'p','ᅨ':'p','ㅏ':'k','ᅡ':'k'};
-  const legacy={37:'arrowleft',38:'arrowup',39:'arrowright',40:'arrowdown',32:' ',70:'f',73:'i',80:'p',27:'escape',75:'k'};
-  for(const v of [ev.code,e.code,ev.key,e.key,ev.keyIdentifier,e.keyIdentifier]){
-    if(v==null)continue;
-    let k=String(v).toLowerCase();
-    if(/^key[a-z]$/.test(k))k=k.slice(3);
-    if(/^u\+[0-9a-f]{4,6}$/.test(k)){const n=parseInt(k.slice(2),16);if(n<=0x10ffff)k=String.fromCodePoint(n).toLowerCase();}
-    if(k!==' ')k=k.trim();
-    if(Object.prototype.hasOwnProperty.call(map,k))return map[k];
-  }
-  for(const v of [ev.keyCode,ev.which,e.keyCode,e.which,ev.charCode,e.charCode]){
-    const n=Number(v);
-    if(!n||n===229)continue;
-    if(ev.type==='keypress'||e.type==='keypress'){
-      const ch=String.fromCodePoint(n).toLowerCase();
-      if(Object.prototype.hasOwnProperty.call(map,ch))return map[ch];
-    }else if(Object.prototype.hasOwnProperty.call(legacy,n))return legacy[n];
-  }
-  return '';
+ const raw=e.originalEvent||e;
+ const map={KeyW:'arrowup',KeyA:'arrowleft',KeyS:'arrowdown',KeyD:'arrowright',ArrowUp:'arrowup',ArrowDown:'arrowdown',ArrowLeft:'arrowleft',ArrowRight:'arrowright',Space:' ',KeyF:'f',KeyI:'i',KeyP:'p',KeyK:'k',Escape:'escape',w:'arrowup',a:'arrowleft',s:'arrowdown',d:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright',' ':' ',spacebar:' ',space:' ',f:'f',i:'i',p:'p',k:'k',esc:'escape','ㅈ':'arrowup','ㅁ':'arrowleft','ㄴ':'arrowdown','ㅇ':'arrowright','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅏ':'k'};
+ const numeric={87:'arrowup',65:'arrowleft',83:'arrowdown',68:'arrowright',38:'arrowup',40:'arrowdown',37:'arrowleft',39:'arrowright',32:' ',70:'f',73:'i',80:'p',75:'k',27:'escape'};
+ return map[raw.code]||map[String(raw.key||e.key||'').toLowerCase()]||numeric[raw.keyCode]||numeric[raw.which]||numeric[e.which]||'';
 }
-function clearGameKeys(){ Object.keys(keys).forEach(k=>{keys[k]=false;}); Object.keys(keyPulse).forEach(k=>{keyPulse[k]=0;}); }
+function clearGameKeys(){Object.keys(keys).forEach(k=>{keys[k]=false;});Object.keys(keyPulse).forEach(k=>{keyPulse[k]=0;});}
 function gameAudio(){
-  try{
-    const a=audio();
-    if(a&&a.state==='suspended') a.resume().catch(()=>{});
-    syncMusic();
-  }catch(err){ console.warn('Game audio:',err); }
+  try{const a=audio();if(a&&a.state==='suspended')a.resume().catch(()=>{});syncMusic();}
+  catch(err){console.warn('Game audio:',err);}
 }
 function inputEvent(e){
-  const raw=e.originalEvent||e;
-  const k=getGameKey(raw);
-  if(e.type==='keyup'){
-    if(k)keys[k]=false;
-    return;
-  }
-  const target=raw.target||e.target;
-  const isControl=target&&target.nodeType===1&&$(target).closest('input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
-  const label='code='+JSON.stringify(raw.code||'')+' / key='+JSON.stringify(raw.key||'')+' / keyCode='+(raw.keyCode||0)+' / which='+(raw.which||0);
-  if(!gameKeys.includes(k)){
-    if(!['Tab','Shift','Control','Alt','Meta','CapsLock','HangulMode','HanjaMode'].includes(raw.key))$('#keyStatus').text('미인식: '+label+(raw.isComposing||raw.keyCode===229?' · 한/영 전환 후 재시도':''));
-    return;
-  }
-  if(raw.ctrlKey||raw.metaKey||raw.altKey)return;
-  const fallback=e.type==='keypress';
-  const repeat=!!keys[k]||!!raw.repeat;
-  if(k==='escape'||k==='p'||k==='i'){
-    if(k==='i'&&S.phase==='intro')return;
-    if(k!=='escape'&&isControl&&menuOpen)return;
+  const raw=e.originalEvent||e,k=getGameKey(e);
+  if(e.type==='keyup'){if(k)keys[k]=false;return;}
+  if(!k||raw.ctrlKey||raw.metaKey||raw.altKey)return;
+  const target=e.target,own=target===el('gameKeyboard');
+  const control=!own&&$(target).closest('input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
+  if(k==='escape'){
     e.preventDefault();
-    if(!repeat){
-      if(k==='escape'){if(invOpen)setInv(false);else setMenu(!menuOpen);}
-      else if(k==='p'&&!invOpen)setMenu(!menuOpen);
-      else if(k==='i'&&!menuOpen)setInv(!invOpen);
-    }
-    keys[k]=true;return;
+    if(!raw.repeat){if(invOpen)setInv(false);else setMenu(!menuOpen);}
+    return;
   }
-  if(menuOpen||invOpen||isControl)return;
+  if(menuOpen||invOpen||control)return;
+  if(k==='i'&&S.phase==='intro')return;
   e.preventDefault();
-  if(!fallback)keys[k]=true;
+  const repeat=!!keys[k]||!!raw.repeat;
+  keys[k]=true;
   if(moveKeys.includes(k)){
+    drag=null;keyPulse[k]=performance.now()+100;
+  }
+  $('#keyStatus').text('입력: '+(k===' '?'SPACE':k.toUpperCase()));
+  if(repeat)return;
+  if(k==='p'){setMenu(true);return;}
+  if(k==='i'){setInv(true);return;}
+  if(S.phase==='cut')return;
+  if(k===' '||k==='f'){
     drag=null;
-    if(!repeat||fallback)keyPulse[k]=performance.now()+(fallback?160:90);
-  }
-  if(k===' '){drag=null;}
-  if(!repeat&&S.phase!=='cut'){
-    if(S.over&&(k==='f'||k===' '))init(true);
+    if(S.over)init(true);
     else if(k===' ')tryDash();
-    else if(k==='f')tryInteract();
-    else if(k==='k'&&OPT.fps&&S.phase==='survive'){
-      S.player.hp=0;woundPlayer(S.enemies[0],false);startDeath(S.enemies[0]||null);
-    }
+    else tryInteract();
+  }else if(k==='k'&&OPT.fps&&S.phase==='survive'){
+    S.player.hp=0;woundPlayer(S.enemies[0],false);startDeath(S.enemies[0]||null);
   }
-  $('#keyStatus').text('수신: '+label+' → '+(k===' '?'SPACE':k.toUpperCase()));
-  if(!repeat)gameAudio();
+  gameAudio();
 }
-// 실제 이벤트는 창의 캡처 단계에서 처리하고, jQuery 이벤트는 보조 경로로 사용한다.
-const seenKeys=new WeakSet();
-function receiveKey(e){
-  const ev=e.originalEvent||e;
-  if(seenKeys.has(ev))return;
-  seenKeys.add(ev);
-  inputEvent(e);
-}
-$.each(['keydown','keyup'],(_,type)=>window.addEventListener(type,receiveKey,{capture:true,passive:false}));
-$(document).on('keydown.topview keyup.topview',receiveKey);
-// 일부 IME/브라우저는 keydown에서 문자를 제공하지 않고 keypress에서만 전달한다.
-$(document).on('keypress.topview',function(e){
-  const k=getGameKey(e);
-  if((moveKeys.includes(k)||k===' '||k==='f')&&!keys[k])inputEvent(e);
+// 실제 편집 가능한 입력창에서 키 이벤트를 직접 처리한다.
+// 문서 경로는 입력창 밖에서 발생하는 키 이벤트만 보조 처리한다.
+$('#gameKeyboard').on('keydown.topview keyup.topview',inputEvent);
+$(document).on('keydown.topview keyup.topview',function(e){if(e.target!==el('gameKeyboard'))inputEvent(e);});
+$('#gameKeyboard').on('focus.topview',function(){clearGameKeys();$('#keyStatus').text('입력창 활성 · WASD / 방향키 / SPACE / F');})
+.on('blur.topview',clearGameKeys)
+.on('input.topview',function(){
+  // keydown 없이 문자가 입력되는 환경의 보조 경로
+  const value=this.value;this.value='';
+  for(const ch of value){
+    const k=getGameKey({key:ch});
+    if(menuOpen||invOpen||!k)continue;
+    if(moveKeys.includes(k)){drag=null;keyPulse[k]=performance.now()+160;}
+    else if(S.phase!=='cut'&&k===' ')tryDash();
+    else if(S.phase!=='cut'&&k==='f')tryInteract();
+    else continue;
+    $('#keyStatus').text('문자 입력: '+(k===' '?'SPACE':k.toUpperCase()));
+  }
 });
-$(window).on('blur.topview',()=>{if(!document.hasFocus()){clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');}});
-$(document).on('visibilitychange.topview',()=>{if(document.hidden)clearGameKeys();});
-$(cv).on('pointerdown.topview',()=>{if(!menuOpen&&!invOpen)focusGame();});
-$(document).on('focusin.topview','input,select,textarea,button,a[href],[contenteditable=true]',clearGameKeys);
-$('#keyboardStart').on('click',()=>{
-  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키 입력 대기 · ↑ ↓ ← → / SPACE / F');
-});
+$(window).on('blur.topview',function(){if(!document.hasFocus())clearGameKeys();});
+$(document).on('visibilitychange.topview',function(){if(document.hidden)clearGameKeys();});
 $('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
 function skipStory(){
   if(S.phase!=='intro'&&S.phase!=='cut')return;
@@ -722,7 +699,7 @@ function updateGameControls(){
   $('#gameControls').prop('hidden',menuOpen||invOpen);
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
-  const message=phase==='intro'?['방향키(↑ ↓ ← →)로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 전투가 시작됩니다.':phase==='survive'?'전투 시작. 방향키(↑ ↓ ← →)로 이동하고 스페이스바로 회피하세요.':'';
+  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 전투가 시작됩니다.':phase==='survive'?'전투 시작. WASD 또는 방향키로 이동하고 스페이스바로 회피하세요.':'';
   $('#phaseStatus').text(message);
 }
 $(function(){if(!menuOpen&&!invOpen&&document.activeElement===document.body)focusGame();updateGameControls();});
@@ -2187,7 +2164,7 @@ function render(){
     ctx.fillText(['1.  이동하기','2.  대시하기','3.  근접전 · '+S.kills+' / '+PRACTICE_ENEMIES,'4.  권총 획득'][step],W/2,62);
     ctx.font=fUI(18);
     ctx.fillStyle='rgba(74,86,100,0.72)';
-    ctx.fillText(MOBILE?['왼쪽 화면을 끌어서','회피 버튼','적에게 접근 · 자동 공격','F 버튼'][step]:['↑   ↓   ←   →','S P A C E','적에게 접근 · 자동 공격','F'][step],W/2,92);
+    ctx.fillText(MOBILE?['왼쪽 화면을 끌어서','회피 버튼','적에게 접근 · 자동 공격','F 버튼'][step]:['W A S D  /  ↑ ↓ ← →','S P A C E','적에게 접근 · 자동 공격','F'][step],W/2,92);
   }
   if(S.phase!=='cut'){
     ctx.textAlign='right';
