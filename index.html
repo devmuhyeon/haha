@@ -65,14 +65,14 @@
 </style>
 </head>
 <body>
-<canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. WASD 또는 방향키로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
+<canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. 방향키(↑ ↓ ← →)로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
 <div id="gameControls" role="group" aria-label="게임 조작">
   <button type="button" id="keyboardStart">키보드 조작 시작</button>
   <button type="button" id="dashGame">회피 (Space)</button>
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
   <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v9</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v10</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -603,14 +603,13 @@ init(false);
 
 /* ===== 입력 ===== */
 const keys=Object.create(null),keyPulse=Object.create(null);
-const moveKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'];
+const moveKeys=['arrowup','arrowdown','arrowleft','arrowright'];
 function isMoveDown(k){return !!keys[k]||(keyPulse[k]||0)>performance.now();}
-const keyCodes={87:'w',65:'a',83:'s',68:'d',32:' ',37:'arrowleft',38:'arrowup',39:'arrowright',40:'arrowdown',70:'f',73:'i',80:'p',27:'escape',75:'k'};
-const hangulKeys={'ㅈ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅏ':'k'};
-const gameKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','f','i','p','escape','k'];
+const gameKeys=[...moveKeys,' ','f','i','p','escape','k'];
 function getGameKey(e){
   const ev=e.originalEvent||e;
-  const map={w:'w',a:'a',s:'s',d:'d',f:'f',i:'i',p:'p',k:'k',arrowup:'arrowup',arrowdown:'arrowdown',arrowleft:'arrowleft',arrowright:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright',escape:'escape',esc:'escape',' ':' ',space:' ',spacebar:' ','ㅈ':'w','ㅉ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅖ':'p','ㅏ':'k','ᄌ':'w','ᄍ':'w','ᄆ':'a','ᄂ':'s','ᄋ':'d','ᄅ':'f','ᅣ':'i','ᅦ':'p','ᅨ':'p','ᅡ':'k'};
+  const map={arrowup:'arrowup',arrowdown:'arrowdown',arrowleft:'arrowleft',arrowright:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright','↑':'arrowup','↓':'arrowdown','←':'arrowleft','→':'arrowright',' ':' ',space:' ',spacebar:' ',f:'f',i:'i',p:'p',k:'k',escape:'escape',esc:'escape','ㄹ':'f','ᄅ':'f','ㅑ':'i','ᅣ':'i','ㅔ':'p','ᅦ':'p','ㅖ':'p','ᅨ':'p','ㅏ':'k','ᅡ':'k'};
+  const legacy={37:'arrowleft',38:'arrowup',39:'arrowright',40:'arrowdown',32:' ',70:'f',73:'i',80:'p',27:'escape',75:'k'};
   for(const v of [ev.code,e.code,ev.key,e.key,ev.keyIdentifier,e.keyIdentifier]){
     if(v==null)continue;
     let k=String(v).toLowerCase();
@@ -618,10 +617,7 @@ function getGameKey(e){
     if(/^u\+[0-9a-f]{4,6}$/.test(k)){const n=parseInt(k.slice(2),16);if(n<=0x10ffff)k=String.fromCodePoint(n).toLowerCase();}
     if(k!==' ')k=k.trim();
     if(Object.prototype.hasOwnProperty.call(map,k))return map[k];
-    const j=k.normalize('NFKD');
-    if(Object.prototype.hasOwnProperty.call(map,j))return map[j];
   }
-  const legacy={87:'w',65:'a',83:'s',68:'d',32:' ',37:'arrowleft',38:'arrowup',39:'arrowright',40:'arrowdown',70:'f',73:'i',80:'p',27:'escape',75:'k'};
   for(const v of [ev.keyCode,ev.which,e.keyCode,e.which,ev.charCode,e.charCode]){
     const n=Number(v);
     if(!n||n===229)continue;
@@ -707,7 +703,7 @@ $(document).on('visibilitychange.topview',()=>{if(document.hidden)clearGameKeys(
 $(cv).on('pointerdown.topview',()=>{if(!menuOpen&&!invOpen)focusGame();});
 $(document).on('focusin.topview','input,select,textarea,button,a[href],[contenteditable=true]',clearGameKeys);
 $('#keyboardStart').on('click',()=>{
-  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키 입력 대기 · WASD / SPACE / F');
+  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키 입력 대기 · ↑ ↓ ← → / SPACE / F');
 });
 $('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
 function skipStory(){
@@ -726,7 +722,7 @@ function updateGameControls(){
   $('#gameControls').prop('hidden',menuOpen||invOpen);
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
-  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 전투가 시작됩니다.':phase==='survive'?'전투 시작. WASD로 이동하고 스페이스바로 회피하세요.':'';
+  const message=phase==='intro'?['방향키(↑ ↓ ← →)로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 전투가 시작됩니다.':phase==='survive'?'전투 시작. 방향키(↑ ↓ ← →)로 이동하고 스페이스바로 회피하세요.':'';
   $('#phaseStatus').text(message);
 }
 $(function(){if(!menuOpen&&!invOpen&&document.activeElement===document.body)focusGame();updateGameControls();});
@@ -1081,10 +1077,10 @@ function tryDash(){
   const p=S.player;
   if(p.dash||p.dcharge<=0)return;
   let dx=p.fx,dy=p.fy,mx=0,my=0;
-  if(isMoveDown('a')||isMoveDown('arrowleft'))mx-=1;
-  if(isMoveDown('d')||isMoveDown('arrowright'))mx+=1;
-  if(isMoveDown('w')||isMoveDown('arrowup'))my-=1;
-  if(isMoveDown('s')||isMoveDown('arrowdown'))my+=1;
+  if(isMoveDown('arrowleft'))mx-=1;
+  if(isMoveDown('arrowright'))mx+=1;
+  if(isMoveDown('arrowup'))my-=1;
+  if(isMoveDown('arrowdown'))my+=1;
   if(mx||my){const L=Math.hypot(mx,my);dx=mx/L;dy=my/L;}
   else if(MOBILE&&stick.active){
     const ax=stick.x-stick.cx,ay=stick.y-stick.cy,L=Math.hypot(ax,ay);
@@ -1445,10 +1441,10 @@ function updatePlayer(dt,d){
     if(p.dash.t>=p.dash.dur)p.dash=null;
   }else{
     let mx=0,my=0;
-    if(isMoveDown('a')||isMoveDown('arrowleft'))mx-=1;
-    if(isMoveDown('d')||isMoveDown('arrowright'))mx+=1;
-    if(isMoveDown('w')||isMoveDown('arrowup'))my-=1;
-    if(isMoveDown('s')||isMoveDown('arrowdown'))my+=1;
+    if(isMoveDown('arrowleft'))mx-=1;
+    if(isMoveDown('arrowright'))mx+=1;
+    if(isMoveDown('arrowup'))my-=1;
+    if(isMoveDown('arrowdown'))my+=1;
     if(!mx&&!my&&MOBILE&&stick.active){
       const dx=stick.x-stick.cx, dy=stick.y-stick.cy, L=Math.hypot(dx,dy);
       if(L>10){ const n=Math.min(1,L/STICK.r); mx=(dx/L)*n; my=(dy/L)*n; }
@@ -2191,7 +2187,7 @@ function render(){
     ctx.fillText(['1.  이동하기','2.  대시하기','3.  근접전 · '+S.kills+' / '+PRACTICE_ENEMIES,'4.  권총 획득'][step],W/2,62);
     ctx.font=fUI(18);
     ctx.fillStyle='rgba(74,86,100,0.72)';
-    ctx.fillText(MOBILE?['왼쪽 화면을 끌어서','회피 버튼','적에게 접근 · 자동 공격','F 버튼'][step]:['W   A   S   D','S P A C E','적에게 접근 · 자동 공격','F'][step],W/2,92);
+    ctx.fillText(MOBILE?['왼쪽 화면을 끌어서','회피 버튼','적에게 접근 · 자동 공격','F 버튼'][step]:['↑   ↓   ←   →','S P A C E','적에게 접근 · 자동 공격','F'][step],W/2,92);
   }
   if(S.phase!=='cut'){
     ctx.textAlign='right';
