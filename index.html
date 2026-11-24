@@ -105,7 +105,7 @@
   <button type="button" id="onlineSwitch" hidden>온라인 공간</button>
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v16</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v17</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="menu">
@@ -538,6 +538,9 @@ const STAGES=['lull','scare','blackout','raid','hold','pan','freeze','arm','go']
 /* ===== 아이템 ===== */
 const ITEMS={"pistol":{"id":"pistol","name":"권총","short":"권총","slot":"ranged","rate":0.16,"range":252,"dmg":1,"spread":0.08,"mag":12,"reload":0.8,"speed":920,"pellets":1,"pierce":1,"color":"#f8edce","kind":"bullet"},"smg":{"id":"smg","name":"기관단총","short":"기관단총","slot":"ranged","rate":0.07,"range":225,"dmg":0.65,"spread":0.22,"mag":36,"reload":1.1,"speed":900,"pellets":1,"pierce":1,"color":"#b4e4a0","kind":"bullet"},"shotgun":{"id":"shotgun","name":"산탄총","short":"산탄총","slot":"ranged","rate":0.58,"range":174,"dmg":1,"spread":0.68,"mag":6,"reload":1.45,"speed":730,"pellets":7,"pierce":1,"color":"#ffcf78","kind":"bullet"},"flame":{"id":"flame","name":"화염방사기","short":"화방","slot":"ranged","rate":0.12,"range":126,"dmg":0.55,"spread":1,"mag":45,"reload":1.6,"speed":0,"pellets":1,"pierce":99,"color":"#ff843e","kind":"flame"},"laser":{"id":"laser","name":"레이저건","short":"레이저건","slot":"ranged","rate":0.25,"range":345,"dmg":1.4,"spread":0,"mag":20,"reload":1.3,"speed":0,"pellets":1,"pierce":4,"color":"#80ecff","kind":"beam"},"rail":{"id":"rail","name":"레일건","short":"레일건","slot":"ranged","rate":0.65,"range":470,"dmg":5,"spread":0.01,"mag":1,"reload":1.8,"speed":2300,"pellets":1,"pierce":8,"color":"#d9b1ff","kind":"bullet"},"rifle":{"id":"rifle","name":"돌격소총","short":"돌격소총","slot":"ranged","rate":0.14,"range":315,"dmg":1.25,"spread":0.09,"mag":24,"reload":1.15,"speed":1250,"pellets":1,"pierce":2,"color":"#fff0a2","kind":"bullet"},"bat":{"id":"bat","name":"야구방망이","short":"방망이","slot":"melee","cd":0.82,"range":66,"arc":2.5,"dmg":3,"kb":210,"color":"#d2ae7c","kind":"melee"},"dagger":{"id":"dagger","name":"단검","short":"단검","slot":"melee","cd":0.25,"range":43,"arc":1.6,"dmg":1.5,"kb":85,"color":"#b9c9d9","kind":"melee"},"sword":{"id":"sword","name":"장검","short":"장검","slot":"melee","cd":0.55,"range":83,"arc":2.7,"dmg":3,"kb":170,"color":"#c4e6ff","kind":"melee"},"spear":{"id":"spear","name":"창","short":"창","slot":"melee","cd":0.73,"range":120,"arc":0.8,"dmg":4,"kb":155,"color":"#dccab4","kind":"melee"},"bamboo":{"id":"bamboo","name":"죽창","short":"죽창","slot":"melee","cd":0.88,"range":145,"arc":0.65,"dmg":5,"kb":180,"color":"#a6d68a","kind":"melee"},"axe":{"id":"axe","name":"도끼","short":"도끼","slot":"melee","cd":0.95,"range":72,"arc":2.1,"dmg":5,"kb":260,"color":"#e0a58e","kind":"melee"},"shield":{"id":"shield","name":"방패","short":"방패","slot":"melee","cd":0.5,"range":0,"arc":0,"dmg":0,"kb":0,"color":"#92d6e8","kind":"shield"}};
 const DROP_WEAPONS=["smg","shotgun","flame","laser","rail","rifle","dagger","sword","spear","bamboo","axe","shield"];
+const HEAL_KITS={heal1:{name:"힐킷 (1칸)",heal:25,color:"#65e8ad"},heal2:{name:"힐킷 (2칸)",heal:50,color:"#56d8ec"}};
+const DROP_ITEMS=[...DROP_WEAPONS,...Object.keys(HEAL_KITS)];
+function rollDrops(random){const n=random();return n<.125?["weapon"]:n<.175?["heal1"]:n<.225?["heal2"]:[];}
 const HEADBUTT={id:'headbutt',name:'박치기',slot:'melee',short:'박치기',
   cd:1.92,range:26,arc:0.95,dmg:1,kb:42};
 /* 적 종류 — 새 적은 여기에 한 줄 추가하면 된다 */
@@ -882,7 +885,7 @@ function hurtEnemy(e,bx,by,fromDash,dmg){
     return;
   }
   e.dead=true; S.kills++;
-  if((S.phase==='survive'||(S.phase==='online'&&isSharedHost()))&&Math.random()<0.125)spawnWeaponDrop(e);
+  if(S.phase==='survive'||(S.phase==='online'&&isSharedHost()))for(const id of rollDrops(Math.random))spawnWeaponDrop(e,id==='weapon'?null:id);
   if(S.phase==='intro'&&S.mission.step===2){S.target.x=e.x;S.target.y=e.y;}
   S.combo++; S.comboT=2.2; S.best=Math.max(S.best,S.combo);
   S.hitstop=Math.max(S.hitstop,(fromDash?0.07:0.05)*k);
@@ -1070,18 +1073,19 @@ function tryInteract(){
   if(S.phase==='online'){requestSharedLoot(item);return;}
   S.drops.splice(S.drops.indexOf(item),1);collectWeapon(item.weapon);
 }
-function collectWeapon(id){const w=ITEMS[id];if(!w)return;equipItem(id);S.swing=null;S.msg=w.name+' 획득 · 기존 무기 교체';S.msgT=2.4;$('#lootStatus').text(S.msg);sfx.pickup();}
+function healPlayer(p,amount){const before=p.hp;p.hp=Math.min(p.hpMax||100,p.hp+amount);return Math.round(p.hp-before);}
+function collectWeapon(id){const kit=HEAL_KITS[id];if(kit){if(S.player.dead)return;const healed=healPlayer(S.player,kit.heal);S.msg=kit.name+' · '+(healed?'체력 +'+healed:'체력 최대');S.msgT=2.4;$('#lootStatus').text(S.msg);sfx.pickup();return;}const w=ITEMS[id];if(!w)return;equipItem(id);S.swing=null;S.msg=w.name+' 획득 · 기존 무기 교체';S.msgT=2.4;$('#lootStatus').text(S.msg);sfx.pickup();}
 function ammoState(w){if(!S.ammo[w.id])S.ammo[w.id]={left:w.mag,reload:0};return S.ammo[w.id];}
 function activeWeapon(){return S.activeSlot==='melee'?(meleeW()):rangedW()||meleeW();}
 function shieldActive(){return S.activeSlot==='melee'&&S.equip.melee==='shield';}
 function nearWeaponDrop(){if(S.phase!=='survive'&&S.phase!=='online')return null;let best=null,dist=56;for(const item of S.drops){const d=Math.hypot(S.player.x-item.x,S.player.y-item.y);if(d<=dist){best=item;dist=d;}}return best;}
 function nextDropWeapon(){if(!S.dropDeck.length){S.dropDeck.push(...DROP_WEAPONS);for(let i=S.dropDeck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[S.dropDeck[i],S.dropDeck[j]]=[S.dropDeck[j],S.dropDeck[i]];}}return S.dropDeck.pop();}
-function spawnWeaponDrop(e){if(S.drops.length>=32)return;const item={id:'d'+Math.random().toString(36).slice(2),weapon:nextDropWeapon(),x:clamp(e.x,BX0+22,BX1-22),y:clamp(e.y,BY0+22,BY1-22),age:0};collide(item,10);S.drops.push(item);}
+function spawnWeaponDrop(e,id=null){if(S.drops.length>=32)return;const item={id:'d'+Math.random().toString(36).slice(2),weapon:id||nextDropWeapon(),x:clamp(e.x,BX0+22,BX1-22),y:clamp(e.y,BY0+22,BY1-22),age:0};collide(item,10);S.drops.push(item);}
 function updateWeaponHUD(){
  const w=activeWeapon(),show=S.phase==='survive'||S.phase==='online';
  const $hud=$('#weaponStatus');$hud.prop('hidden',!show);
  if(show&&w){const a=w.slot==='ranged'?ammoState(w):null,text=w.name+(a?' · '+(a.reload>0?'재장전 '+a.reload.toFixed(1)+'초':a.left+' / '+w.mag):w.id==='shield'?' · 정면 방어':' · 근접');if($hud.text()!==text)$hud.text(text);}
- const item=nearWeaponDrop(),label=item?'획득 (F) · '+ITEMS[item.weapon].name:'획득 / 상호작용 (F)';if($('#interactGame').text()!==label)$('#interactGame').text(label);
+ const item=nearWeaponDrop(),label=item?'획득 (F) · '+(ITEMS[item.weapon]||HEAL_KITS[item.weapon]).name:'획득 / 상호작용 (F)';if($('#interactGame').text()!==label)$('#interactGame').text(label);
 }
 
 /* ===== 컷신 ===== */
@@ -1872,7 +1876,7 @@ function grade(){
   const v='saturate('+(tone.sat+pulse*0.6+cb).toFixed(2)+') contrast('+(tone.con+cb*0.5).toFixed(2)+')';
   if(v!==gradeCur){gradeCur=v;cv.style.filter=v;}
 }
-function drawWeaponDrops(){if(S.phase!=='survive'&&S.phase!=='online')return;const nearest=nearWeaponDrop();for(const item of S.drops){const w=ITEMS[item.weapon];if(!w)continue;ctx.save();ctx.translate(item.x,item.y);ctx.strokeStyle=w.color;ctx.lineWidth=item===nearest?3:1.5;ctx.beginPath();ctx.arc(0,0,21,0,6.283);ctx.stroke();ctx.fillStyle='#17202b';rr(-17,-8,34,16,4);ctx.fill();ctx.stroke();ctx.fillStyle=w.color;ctx.fillRect(-12,-3,24,6);ctx.font=fUI(12);ctx.textAlign='center';ctx.strokeStyle='#101820';ctx.lineWidth=3;const label=(item===nearest?'F · ':'')+w.name;ctx.strokeText(label,0,-29);ctx.fillStyle='#fff';ctx.fillText(label,0,-29);ctx.restore();}}
+function drawWeaponDrops(){if(S.phase!=='survive'&&S.phase!=='online')return;const nearest=nearWeaponDrop();for(const item of S.drops){const kit=HEAL_KITS[item.weapon],w=ITEMS[item.weapon]||kit;if(!w)continue;ctx.save();ctx.translate(item.x,item.y);ctx.strokeStyle=w.color;ctx.lineWidth=item===nearest?3:1.5;ctx.beginPath();ctx.arc(0,0,21,0,6.283);ctx.stroke();ctx.fillStyle='#17202b';rr(-17,-8,34,16,4);ctx.fill();ctx.stroke();ctx.fillStyle=w.color;if(kit){ctx.fillRect(-3,-7,6,14);ctx.fillRect(-9,-3,18,6);if(kit.heal===50){ctx.fillRect(11,-5,3,10);}}else ctx.fillRect(-12,-3,24,6);ctx.font=fUI(12);ctx.textAlign='center';ctx.strokeStyle='#101820';ctx.lineWidth=3;const label=(item===nearest?'F · ':'')+w.name;ctx.strokeText(label,0,-29);ctx.fillStyle='#fff';ctx.fillText(label,0,-29);ctx.restore();}}
 function drawShotFX(){for(const fx of S.shotFX){ctx.save();ctx.globalAlpha=clamp(fx.life/fx.max,0,1);ctx.strokeStyle=fx.color;ctx.fillStyle=fx.color;if(fx.kind==='beam'){ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(fx.x,fx.y);ctx.lineTo(fx.ex,fx.ey);ctx.stroke();}else{ctx.globalAlpha*=.38;ctx.beginPath();ctx.moveTo(fx.x,fx.y);ctx.arc(fx.x,fx.y,fx.len,fx.a-fx.spread/2,fx.a+fx.spread/2);ctx.closePath();ctx.fill();}ctx.restore();}}
 function drawEquippedMelee(x,y,a,w){ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.strokeStyle=w.color||'#b9c9d9';ctx.lineWidth=w.id==='dagger'?4:6;ctx.beginPath();ctx.moveTo(12,0);ctx.lineTo(Math.min(48,w.range*.45),0);ctx.stroke();ctx.restore();}
 function drawShield(x,y,angle){ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.strokeStyle='#a1e9ff';ctx.lineWidth=5;ctx.beginPath();ctx.arc(0,0,23,-Math.PI/3,Math.PI/3);ctx.stroke();ctx.restore();}
@@ -2390,7 +2394,7 @@ function receiveSharedEvent(sender,m){
   if(worldHost!==sender){worldHost=sender;receivedWorldSeq=-1;}if(m.seq<=receivedWorldSeq)return;receivedWorldSeq=m.seq;
   const existing=new Map(S.enemies.map(e=>[e.netId,e]));S.enemies=[];
   for(const v of m.mobs.slice(0,16)){if(!validPoint(v)||typeof v.id!=='string'||!Number.isFinite(v.hp)||v.hp<=0)continue;const e=existing.get(v.id)||makeEnemy(v.x,v.y,v.t==='brute'?'brute':'grunt',{netId:v.id});if(existing.has(v.id))S.enemies.push(e);e.x=v.x;e.y=v.y;e.hp=clamp(v.hp,0,3);e.bob=Number.isFinite(v.b)?v.b:0;e.dead=false;}
-  S.drops=m.loot.slice(0,32).filter(v=>validPoint(v)&&typeof v.id==='string'&&DROP_WEAPONS.includes(v.weapon)).map(v=>({...v,age:0}));return;
+  S.drops=m.loot.slice(0,32).filter(v=>validPoint(v)&&typeof v.id==='string'&&DROP_ITEMS.includes(v.weapon)).map(v=>({...v,age:0}));return;
  }
  if(typeof m.eid!=='string'||m.eid.length>64||seenNetEvents.has(m.eid))return;
  seenNetEvents.set(m.eid,Date.now());if(seenNetEvents.size>2000)seenNetEvents.delete(seenNetEvents.keys().next().value);
@@ -2402,7 +2406,7 @@ function receiveSharedEvent(sender,m){
  }else if(m.kind==='loot'&&isSharedHost()){
   const peer=sharedRoom.peers.get(sender);if(!peer||peer.dead)return;
   grantSharedLoot(sender,m.item,peer.tx,peer.ty);
- }else if(m.kind==='grant'&&sender===sharedHost()&&m.to===sharedRoom.id&&DROP_WEAPONS.includes(m.weapon)){collectWeapon(m.weapon);}
+ }else if(m.kind==='grant'&&sender===sharedHost()&&m.to===sharedRoom.id&&DROP_ITEMS.includes(m.weapon)){collectWeapon(m.weapon);}
 }
 function requestSharedLoot(item){if(!sharedRoom?.ready||S.player.dead)return;if(isSharedHost())grantSharedLoot(sharedRoom.id,item.id,S.player.x,S.player.y);else sendShared({kind:'loot',eid:eventId(),item:item.id});}
 function grantSharedLoot(to,id,x,y){
