@@ -105,7 +105,7 @@
   <button type="button" id="onlineSwitch" hidden>온라인 공간</button>
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v17</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v18</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="menu">
@@ -606,7 +606,7 @@ function gameAudio(){
 function inputEvent(e){
   if(!playerNickname)return;
   const raw=e.originalEvent||e,k=getGameKey(e);
-  if(e.type==='keyup'){if(k)keys[k]=false;return;}
+  if(e.type==='keyup'){if(k){keys[k]=false;keyPulse[k]=0;}return;}
   if(!k||raw.ctrlKey||raw.metaKey||raw.altKey)return;
   const target=e.target,own=target===el('gameKeyboard');
   const control=!own&&$(target).closest('input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
@@ -620,10 +620,10 @@ function inputEvent(e){
   const repeat=!!keys[k]||!!raw.repeat;
   keys[k]=true;
   if(moveKeys.includes(k)){
-    drag=null;keyPulse[k]=performance.now()+100;
+    drag=null;keyPulse[k]=0;
   }
-  $('#keyStatus').text('입력: '+(k===' '?'SPACE':k.toUpperCase()));
   if(repeat)return;
+  $('#keyStatus').text('입력: '+(k===' '?'SPACE':k.toUpperCase()));
   if(k==='p'){setMenu(true);return;}
   if(S.phase==='cut')return;
   if(k===' '||k==='f'){
@@ -664,12 +664,12 @@ function skipStory(){
 }
 $('#skipStory').on('click',skipStory);
 $('#interactGame').on('click',()=>{focusGame();gameAudio();tryInteract();});
-let lastPhase='';
+let lastPhase='',lastHudAt=-Infinity;
 function updateGameControls(){
   const phase=S.phase;
   const state=phase==='intro'?'intro-'+S.mission.step:phase;
   const view=state+'-'+menuOpen+'-'+invOpen;
-  updateWeaponHUD();
+  const hudNow=performance.now();if(hudNow-lastHudAt>=100||lastPhase!==view){lastHudAt=hudNow;updateWeaponHUD();}
   if(lastPhase===view)return;
   lastPhase=view;
   $('#gameControls').prop('hidden',!playerNickname||menuOpen||invOpen);
@@ -874,10 +874,11 @@ function swingMelee(w,ang){
 }
 function hurtEnemy(e,bx,by,fromDash,dmg){
   if(e.dead)return;
-  const k=K();
+  const online=S.phase==='online',k=K();
   e.hp-=(dmg!==undefined?dmg:(fromDash?2:1));
   e.flash=0.06; e.punch=1;
   if(e.hp>0){
+    if(online)return;
     S.hitstop=Math.max(S.hitstop,0.02*k);
     S.shake=Math.max(S.shake,1.5*k);
     blood(bx,by,7,120);
@@ -886,6 +887,7 @@ function hurtEnemy(e,bx,by,fromDash,dmg){
   }
   e.dead=true; S.kills++;
   if(S.phase==='survive'||(S.phase==='online'&&isSharedHost()))for(const id of rollDrops(Math.random))spawnWeaponDrop(e,id==='weapon'?null:id);
+  if(online){ringfx(e.x,e.y,4,e.s*1.6,2,'rgba(200,210,222,',0.18);return;}
   if(S.phase==='intro'&&S.mission.step===2){S.target.x=e.x;S.target.y=e.y;}
   S.combo++; S.comboT=2.2; S.best=Math.max(S.best,S.combo);
   S.hitstop=Math.max(S.hitstop,(fromDash?0.07:0.05)*k);
@@ -1316,7 +1318,8 @@ function update(dt){
   }
   for(const r of S.rings)r.t+=dt;
   S.rings=S.rings.filter(r=>r.t<r.dur);
-  if(S.hitstop>0){ S.hitstop-=dt; return; }
+  if(S.phase==='online'){S.hitstop=0;S.slow=0;}
+  else if(S.hitstop>0){ S.hitstop-=dt; return; }
 
   const ts=S.slow>0?0.3:1;
   if(S.slow>0)S.slow-=dt;
@@ -2237,31 +2240,32 @@ function makeSharedRoom(cfg){
     const count=peers.size+(ready?1:0);
     if(lastCount!==count||lastStatus!==status){lastCount=count;lastStatus=status;cfg.report(status,count);}
   }
+  let membershipRevision=0;
   function receive(t,buf){
     if(closed||!ready||typeof t!=='string'||!t.startsWith(root)||buf.length>20000)return;
     const sender=t.slice(root.length);
     if(sender===id||!/^[a-f0-9]{24}$/.test(sender))return;
     let m;try{m=JSON.parse(buf.toString());}catch(e){return;}
     if(!m||m.v!==1)return;
-    if(m.kind==='leave'){peers.delete(sender);report();return;}
+    if(m.kind==='leave'){if(peers.delete(sender))membershipRevision++;report();return;}
     if(m.kind!=='pose'){cfg.event?.(sender,m);return;}
     if(!Number.isFinite(m.x)||!Number.isFinite(m.y)||!Number.isFinite(m.fx)||!Number.isFinite(m.fy)||!Number.isFinite(m.bob))return;
     const x=Math.max(26,Math.min(874,m.x)),y=Math.max(26,Math.min(574,m.y));
     let p=peers.get(sender);
-    if(!p){if(peers.size>=100)return;p={id:sender,x,y};peers.set(sender,p);}
+    if(!p){if(peers.size>=100)return;p={id:sender,x,y};peers.set(sender,p);membershipRevision++;}
     p.tx=x;p.ty=y;p.fx=Math.max(-1,Math.min(1,m.fx));p.fy=Math.max(-1,Math.min(1,m.fy));p.bob=m.bob%6.283;p.armed=m.armed===true;p.hp=Number.isFinite(m.hp)?Math.max(0,Math.min(100,m.hp)):100;p.dead=p.hp<=0;p.weapon=Object.hasOwn(ITEMS,m.weapon)?m.weapon:'pistol';p.nickname=normalizeNickname(m.nickname)||('P-'+sender.slice(0,4).toUpperCase());p.seen=cfg.now();
     report();
   }
   function publish(force){
     if(!ready||closed||!client||!client.connected)return;
     const p=cfg.pose();if(!p)return;
-    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*100)/100,armed:!!p.armed,hp:p.hp,weapon:p.weapon,nickname:p.nickname});
+    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*10)/10,armed:!!p.armed,hp:p.hp,weapon:p.weapon,nickname:p.nickname});
     const now=cfg.now();
-    if(!force&&(now-lastSent<100||(pose===lastPose&&now-lastSent<1200)))return;
+    if(!force&&(now-lastSent<125||(pose===lastPose&&now-lastSent<1200)))return;
     try{client.publish(topic,pose,{qos:0,retain:false});lastPose=pose;lastSent=now;}catch(e){}
   }
   function offline(){
-    if(closed)return;ready=false;peers.clear();status='재연결 중';report();
+    if(closed)return;ready=false;peers.clear();membershipRevision++;status='재연결 중';report();
   }
   function start(){
     if(client||closed)return;
@@ -2285,7 +2289,7 @@ function makeSharedRoom(cfg){
   }
   function tick(){
     if(closed)return;
-    const now=cfg.now();for(const [key,p] of peers)if(now-p.seen>8000)peers.delete(key);
+    const now=cfg.now();for(const [key,p] of peers)if(now-p.seen>8000){peers.delete(key);membershipRevision++;}
     report();publish(false);
   }
   function stop(){
@@ -2300,7 +2304,7 @@ function makeSharedRoom(cfg){
     ready=false;peers.clear();
   }
   function send(m){if(!ready||closed||!client?.connected)return false;try{client.publish(topic,JSON.stringify({...m,v:1}),{qos:0,retain:false});return true;}catch(e){return false;}}
-  return {id,start,tick,stop,peers,send,get ready(){return ready;}};
+  return {id,start,tick,stop,peers,send,get ready(){return ready;},get membershipRevision(){return membershipRevision;}};
 }
 const SHARED_ROOT='topview/devmuhyeon/haha/room-v2/';
 const SHARED_BROKER='wss://broker.emqx.io:8084/mqtt';
@@ -2373,12 +2377,13 @@ $('#onlineSwitch').on('click',function(){
 });
 $('#onlineRetry').on('click',function(){disconnectShared();ensureSharedRoom();focusGame();});
 $(window).on('pagehide',disconnectShared);
-setInterval(tickShared,100);
+setInterval(tickShared,125);
 
 
 let worldAt=0,hostSince=0,hostWas=false,worldSeq=0,receivedWorldSeq=-1,worldHost='',eventSerial=0;
 const seenNetEvents=new Map();
-function sharedHost(){if(!sharedRoom?.ready)return '';return [sharedRoom.id,...sharedRoom.peers.keys()].sort()[0];}
+let cachedHostRoom=null,cachedHostRevision=-1,cachedHostId='';
+function sharedHost(){const room=sharedRoom;if(!room?.ready)return '';if(room!==cachedHostRoom||room.membershipRevision!==cachedHostRevision){cachedHostRoom=room;cachedHostRevision=room.membershipRevision;cachedHostId=room.id;for(const id of room.peers.keys())if(id<cachedHostId)cachedHostId=id;}return cachedHostId;}
 function isSharedHost(){return !!sharedRoom?.ready&&sharedHost()===sharedRoom.id;}
 function eventId(){return sharedRoom.id+'-'+(++eventSerial);}
 function sendShared(m){return !!sharedRoom?.send(m);}
@@ -2444,7 +2449,7 @@ function fireOnline(target,w){
  if(sendShared(m)){addNetAttack(sharedRoom.id,m);p.muzzle=.055;if(w.slot==='ranged')sfx.shot(K());}
 }
 function updateNetShots(d){
- const p=S.player,me=sharedRoom?.id;
+ const p=S.player,me=sharedRoom?.id,host=isSharedHost();
  for(const sh of S.netShots){
   if(sh.life<=0)continue;
   const w=sh.w,step=sh.speed?Math.min(sh.remaining,sh.speed*d):sh.first?w.range:0;
@@ -2453,7 +2458,7 @@ function updateNetShots(d){
    const arc=w.kind==='flame'||w.kind==='melee';
    function hits(e){if(arc){const dx=e.x-sh.ox,dy=e.y-sh.oy,L=Math.hypot(dx,dy),a=Math.atan2(dy,dx),diff=Math.atan2(Math.sin(a-sh.a),Math.cos(a-sh.a));return L<=w.range+e.r&&Math.abs(diff)<=(w.arc||w.spread)/2+.15;}return !!segmentHit(x,y,ex,ey,e,3);}
    if(sh.sender!==me&&!p.dead&&!sh.hit.has('self')&&hits(p)){sh.hit.add('self');applyPvPDamage(sh,sh.a,Math.min(45,w.dmg*8));if(!arc&&--sh.pierce<=0)sh.life=0;}
-   if(isSharedHost()&&sh.life>0){
+   if(host&&sh.life>0){
     for(const e of S.enemies){if(e.dead||sh.hit.has(e.netId)||!hits(e))continue;sh.hit.add(e.netId);hurtEnemy(e,e.x,e.y,false,w.dmg);if(!arc&&--sh.pierce<=0){sh.life=0;break;}}
    }
    if(sh.speed){sh.x=ex;sh.y=ey;sh.remaining-=step;}
@@ -2501,7 +2506,7 @@ function loop(now){
       if(S.cutElapsed>=25)finishCut();
     }
     // 저사양 환경에서도 프레임당 여러 작은 물리 스텝으로 진행 시간을 유지한다.
-    let remaining=dt;
+    let remaining=S.phase==='online'?Math.min(dt,0.0667):dt;
     while(remaining>0.000001){const step=Math.min(remaining,1/60);update(step);remaining-=step;}
   }
   updateGameControls();
