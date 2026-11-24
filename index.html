@@ -38,16 +38,16 @@
   #nicknameHelp{margin:8px 0}
   #playerNameHud{background:#19212b;color:#fff;padding:6px 8px;border-radius:3px}
   #weaponStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#fff}
-  #scoreboard{position:fixed;z-index:4;right:8px;top:96px;width:min(320px,calc(100% - 16px));box-sizing:border-box;color:#f0f5fa;background:rgba(19,28,39,.94);border:1px solid #75879a;border-radius:6px;padding:8px;font-size:12px}
+  #scoreboard{position:fixed;z-index:4;right:8px;top:96px;width:min(320px,calc(100% - 16px));box-sizing:border-box;color:#f0f5fa;background:rgba(19,28,39,.64);border:1px solid rgba(151,169,188,.65);border-radius:6px;padding:8px;font-size:12px}
   #scoreboard[hidden],#scorePanel[hidden]{display:none}
-  #scoreToggle{width:100%;min-height:36px;background:#263649;color:#fff;border:1px solid #899bad;border-radius:3px;text-align:left;padding:6px 10px;letter-spacing:0;font:inherit;font-weight:700}
+  #scoreToggle{width:100%;min-height:36px;background:rgba(24,36,51,.76);color:#fff;border:1px solid #899bad;border-radius:3px;text-align:left;padding:6px 10px;letter-spacing:0;font:inherit;font-weight:700}
   #scoreToggle:focus-visible,#scoreScroll:focus-visible{outline:2px solid #8ddcff;outline-offset:2px}
   #scoreScroll{max-height:28vh;overflow:auto;overscroll-behavior:contain}
   #scoreboard table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
   #scoreboard th,#scoreboard td{padding:6px 4px;text-align:right;white-space:nowrap;border-bottom:1px solid #425266}
   #scoreboard th:nth-child(2),#scoreboard td:nth-child(2){text-align:left;max-width:100px;overflow:hidden;text-overflow:ellipsis}
-  #scoreboard thead th{position:sticky;top:0;background:#263649;color:#fff}
-  #scoreboard tr[data-self="true"]{background:#32475c;font-weight:700}
+  #scoreboard thead th{position:sticky;top:0;background:rgba(24,36,51,.80);color:#fff}
+  #scoreboard tr[data-self="true"]{background:rgba(50,71,92,.62);font-weight:700}
   #scoreboard p{margin:6px 0 2px;color:#cbd6e2;font-size:11px;line-height:1.5}
   @media(max-width:600px){#scoreboard{top:106px;width:min(300px,calc(100% - 16px))}#scoreScroll{max-height:21vh}}
   #onlineStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#e1eef9}
@@ -117,7 +117,7 @@
   <button type="button" id="onlineSwitch" hidden>온라인 공간</button>
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v19</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v20</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <section id="scoreboard" aria-label="온라인 점수판" hidden>
