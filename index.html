@@ -38,6 +38,18 @@
   #nicknameHelp{margin:8px 0}
   #playerNameHud{background:#19212b;color:#fff;padding:6px 8px;border-radius:3px}
   #weaponStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#fff}
+  #scoreboard{position:fixed;z-index:4;right:8px;top:96px;width:min(320px,calc(100% - 16px));box-sizing:border-box;color:#f0f5fa;background:rgba(19,28,39,.94);border:1px solid #75879a;border-radius:6px;padding:8px;font-size:12px}
+  #scoreboard[hidden],#scorePanel[hidden]{display:none}
+  #scoreToggle{width:100%;min-height:36px;background:#263649;color:#fff;border:1px solid #899bad;border-radius:3px;text-align:left;padding:6px 10px;letter-spacing:0;font:inherit;font-weight:700}
+  #scoreToggle:focus-visible,#scoreScroll:focus-visible{outline:2px solid #8ddcff;outline-offset:2px}
+  #scoreScroll{max-height:28vh;overflow:auto;overscroll-behavior:contain}
+  #scoreboard table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  #scoreboard th,#scoreboard td{padding:6px 4px;text-align:right;white-space:nowrap;border-bottom:1px solid #425266}
+  #scoreboard th:nth-child(2),#scoreboard td:nth-child(2){text-align:left;max-width:100px;overflow:hidden;text-overflow:ellipsis}
+  #scoreboard thead th{position:sticky;top:0;background:#263649;color:#fff}
+  #scoreboard tr[data-self="true"]{background:#32475c;font-weight:700}
+  #scoreboard p{margin:6px 0 2px;color:#cbd6e2;font-size:11px;line-height:1.5}
+  @media(max-width:600px){#scoreboard{top:106px;width:min(300px,calc(100% - 16px))}#scoreScroll{max-height:21vh}}
   #onlineStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#e1eef9}
   #keyStatus{background:#19212b;padding:6px 8px;border-radius:3px;pointer-events:none}
   #gameControls[hidden],#gameControls [hidden]{display:none}
@@ -105,9 +117,20 @@
   <button type="button" id="onlineSwitch" hidden>온라인 공간</button>
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v18</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v19</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
+<section id="scoreboard" aria-label="온라인 점수판" hidden>
+  <button type="button" id="scoreToggle" aria-expanded="true" aria-controls="scorePanel">실시간 점수판</button>
+  <div id="scorePanel">
+    <p id="scoreRules">플레이어 처치 +100점 · 몬스터 처치 +10점</p>
+    <div id="scoreScroll" tabindex="0" role="region" aria-label="접속자 순위">
+      <table aria-describedby="scoreRules"><caption class="sr-only">온라인 전장 점수 순위</caption>
+      <thead><tr><th scope="col">순위</th><th scope="col">닉네임</th><th scope="col">킬</th><th scope="col">몹</th><th scope="col">데스</th><th scope="col">점수</th></tr></thead>
+      <tbody id="scoreRows"></tbody></table>
+    </div>
+  </div>
+</section>
 <div id="menu">
   <div class="box">
     <h2>OPTIONS</h2>
@@ -562,7 +585,7 @@ function init(skip){
       face:skip?'plain':'smile',armed:!!skip},
     enemies:[],bullets:[],parts:[],rings:[],ash:[],npcs:[],corpses:[],
     equip:{ranged:skip?'pistol':null,melee:skip?null:'bat'}, bag:[],
-    gunCd:0,mCd:0,swing:null,ammo:{},drops:[],dropDeck:[],shotFX:[],activeSlot:skip?'ranged':'melee',cleared:false,netShots:[],onlineKills:0,respawnAt:0,
+    gunCd:0,mCd:0,swing:null,ammo:{},drops:[],dropDeck:[],shotFX:[],activeSlot:skip?'ranged':'melee',cleared:false,netShots:[],onlineKills:0,monsterKills:0,onlineDeaths:0,respawnAt:0,
     kills:0,spawned:0,spawnT:0.2,openingWave:true,survT:0,combo:0,comboT:0,best:0,
     hitstop:0,shake:0,flashR:0,flashW:0,zoom:0,slow:0,
     camZ:skip?0.09:0,camP:0,focus:null,blk:0,center:{x:452,y:300},
@@ -677,6 +700,7 @@ function updateGameControls(){
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
   $('#onlineSwitch').prop('hidden',true);
   $('#onlineStatus').prop('hidden',phase!=='online');
+  $('#scoreboard').prop('hidden',phase!=='online'||menuOpen);
   if(phase!=='online')$('#onlineRetry').prop('hidden',true);
   const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 연습이 시작됩니다.':phase==='online'?'온라인 전장. 다른 플레이어 및 몬스터 자동 공격. F 무기 획득 시 기존 무기 교체.':phase==='survive'?'총기 연습. 빠른 적 12명 처치 후 온라인 전장 자동 입장.':'';
   $('#phaseStatus').text(message);
@@ -872,7 +896,7 @@ function swingMelee(w,ang){
     sfx.whiff(k);
   }
 }
-function hurtEnemy(e,bx,by,fromDash,dmg){
+function hurtEnemy(e,bx,by,fromDash,dmg,credit){
   if(e.dead)return;
   const online=S.phase==='online',k=K();
   e.hp-=(dmg!==undefined?dmg:(fromDash?2:1));
@@ -887,7 +911,7 @@ function hurtEnemy(e,bx,by,fromDash,dmg){
   }
   e.dead=true; S.kills++;
   if(S.phase==='survive'||(S.phase==='online'&&isSharedHost()))for(const id of rollDrops(Math.random))spawnWeaponDrop(e,id==='weapon'?null:id);
-  if(online){ringfx(e.x,e.y,4,e.s*1.6,2,'rgba(200,210,222,',0.18);return;}
+  if(online){if(isSharedHost()&&credit)awardOnlineKill('monster',credit);ringfx(e.x,e.y,4,e.s*1.6,2,'rgba(200,210,222,',0.18);return;}
   if(S.phase==='intro'&&S.mission.step===2){S.target.x=e.x;S.target.y=e.y;}
   S.combo++; S.comboT=2.2; S.best=Math.max(S.best,S.combo);
   S.hitstop=Math.max(S.hitstop,(fromDash?0.07:0.05)*k);
@@ -2253,13 +2277,13 @@ function makeSharedRoom(cfg){
     const x=Math.max(26,Math.min(874,m.x)),y=Math.max(26,Math.min(574,m.y));
     let p=peers.get(sender);
     if(!p){if(peers.size>=100)return;p={id:sender,x,y};peers.set(sender,p);membershipRevision++;}
-    p.tx=x;p.ty=y;p.fx=Math.max(-1,Math.min(1,m.fx));p.fy=Math.max(-1,Math.min(1,m.fy));p.bob=m.bob%6.283;p.armed=m.armed===true;p.hp=Number.isFinite(m.hp)?Math.max(0,Math.min(100,m.hp)):100;p.dead=p.hp<=0;p.weapon=Object.hasOwn(ITEMS,m.weapon)?m.weapon:'pistol';p.nickname=normalizeNickname(m.nickname)||('P-'+sender.slice(0,4).toUpperCase());p.seen=cfg.now();
+    p.tx=x;p.ty=y;p.fx=Math.max(-1,Math.min(1,m.fx));p.fy=Math.max(-1,Math.min(1,m.fy));p.bob=m.bob%6.283;p.armed=m.armed===true;p.hp=Number.isFinite(m.hp)?Math.max(0,Math.min(100,m.hp)):100;p.dead=p.hp<=0;p.weapon=Object.hasOwn(ITEMS,m.weapon)?m.weapon:'pistol';p.nickname=normalizeNickname(m.nickname)||('P-'+sender.slice(0,4).toUpperCase());p.kills=scoreCount(m.kills);p.mobs=scoreCount(m.mobs);p.deaths=scoreCount(m.deaths);p.seen=cfg.now();
     report();
   }
   function publish(force){
     if(!ready||closed||!client||!client.connected)return;
     const p=cfg.pose();if(!p)return;
-    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*10)/10,armed:!!p.armed,hp:p.hp,weapon:p.weapon,nickname:p.nickname});
+    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*10)/10,armed:!!p.armed,hp:p.hp,weapon:p.weapon,nickname:p.nickname,kills:p.kills,mobs:p.mobs,deaths:p.deaths});
     const now=cfg.now();
     if(!force&&(now-lastSent<125||(pose===lastPose&&now-lastSent<1200)))return;
     try{client.publish(topic,pose,{qos:0,retain:false});lastPose=pose;lastSent=now;}catch(e){}
@@ -2274,7 +2298,7 @@ function makeSharedRoom(cfg){
       client=cfg.connect({clientId:'tv_'+id,clean:true,keepalive:15,connectTimeout:8000,reconnectPeriod:2500,queueQoSZero:false,will:{topic,payload:JSON.stringify({v:1,kind:'leave'}),qos:0,retain:false}});
       client.on('connect',()=>{
         if(closed)return;
-        client.subscribe(root+'+',{qos:0},(err,granted)=>{
+        client.subscribe(root+'+',{qos:1},(err,granted)=>{
           if(closed||!client.connected)return;
           if(err||!granted||granted.some(g=>g.qos>2)){status='공간 연결 실패';ready=false;report();return;}
           ready=true;status='온라인';lastSent=-Infinity;report();publish(true);
@@ -2303,10 +2327,10 @@ function makeSharedRoom(cfg){
     }
     ready=false;peers.clear();
   }
-  function send(m){if(!ready||closed||!client?.connected)return false;try{client.publish(topic,JSON.stringify({...m,v:1}),{qos:0,retain:false});return true;}catch(e){return false;}}
+  function send(m){if(!ready||closed||!client?.connected)return false;try{client.publish(topic,JSON.stringify({...m,v:1}),{qos:m.kind==='score'?1:0,retain:false});return true;}catch(e){return false;}}
   return {id,start,tick,stop,peers,send,get ready(){return ready;},get membershipRevision(){return membershipRevision;}};
 }
-const SHARED_ROOT='topview/devmuhyeon/haha/room-v2/';
+const SHARED_ROOT='topview/devmuhyeon/haha/room-v3/';
 const SHARED_BROKER='wss://broker.emqx.io:8084/mqtt';
 const MQTT_CDN='https://cdn.jsdelivr.net/npm/mqtt@5.16.1/dist/mqtt.min.js';
 let sharedRoom=null,sharedLoading=false,sharedGeneration=0,sharedRetryAt=0,sharedRenderTime=0;
@@ -2345,7 +2369,7 @@ function ensureSharedRoom(){
   const id=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
   sharedRoom=makeSharedRoom({
     id,root:SHARED_ROOT,now:Date.now,
-    pose:()=>S.phase==='online'?{...S.player,weapon:activeWeapon()?.id,nickname:playerNickname}:null,
+    pose:()=>S.phase==='online'?{...S.player,weapon:activeWeapon()?.id,nickname:playerNickname,kills:S.onlineKills,mobs:S.monsterKills,deaths:S.onlineDeaths}:null,
     event:receiveSharedEvent,
     connect:opts=>window.mqtt.connect(SHARED_BROKER,opts),
     report:(status,count)=>{if(S.phase==='online')setSharedStatus(status,count);}
@@ -2354,7 +2378,7 @@ function ensureSharedRoom(){
 }
 function tickShared(){
   if(S.phase!=='online'){if(sharedRoom||sharedLoading)disconnectShared();return;}
-  ensureSharedRoom();if(sharedRoom){sharedRoom.tick();if(isSharedHost())publishSharedWorld();}
+  ensureSharedRoom();if(sharedRoom){sharedRoom.tick();if(isSharedHost())publishSharedWorld();}updateScoreboard();
 }
 function drawPlayerName(name,x,y,self){if(!name)return;ctx.save();ctx.font=fUI(13);ctx.textAlign='center';ctx.lineWidth=3;ctx.strokeStyle='#111820';ctx.strokeText(name,x,y,160);ctx.fillStyle=self?'#bdeaff':'#e8fff6';ctx.fillText(name,x,y,160);ctx.restore();}
 function drawSharedPlayers(){
@@ -2403,6 +2427,12 @@ function receiveSharedEvent(sender,m){
  }
  if(typeof m.eid!=='string'||m.eid.length>64||seenNetEvents.has(m.eid))return;
  seenNetEvents.set(m.eid,Date.now());if(seenNetEvents.size>2000)seenNetEvents.delete(seenNetEvents.keys().next().value);
+ if(m.kind==='score'){
+  if(m.to!==sharedRoom.id)return;
+  if(m.category==='monster'&&sender===sharedHost())S.monsterKills++;
+  else if(m.category==='player'&&sharedRoom.peers.has(sender))S.onlineKills++;
+  return;
+ }
  if(m.kind==='attack'){
   const peer=sharedRoom.peers.get(sender);
   if(!peer||peer.dead||!validPoint(m)||!Number.isFinite(m.a)||!Object.hasOwn(ITEMS,m.weapon)||m.weapon==='shield')return;
@@ -2432,7 +2462,7 @@ function applyPvPDamage(shot,angle,damage){
   }
  }
  p.hp=Math.max(0,p.hp-damage);p.inv=.12;S.hurtT=.35;
- if(p.hp<=0){p.dead=true;p.dash=null;S.respawnAt=Date.now()+3000;S.msg='3초 후 재입장';S.msgT=3;S.aim=null;}
+ if(p.hp<=0)onlineDeath(shot.sender);
 }
 function addNetAttack(sender,m){
  const w=ITEMS[m.weapon];if(!w||S.netShots.length>280)return;
@@ -2459,7 +2489,7 @@ function updateNetShots(d){
    function hits(e){if(arc){const dx=e.x-sh.ox,dy=e.y-sh.oy,L=Math.hypot(dx,dy),a=Math.atan2(dy,dx),diff=Math.atan2(Math.sin(a-sh.a),Math.cos(a-sh.a));return L<=w.range+e.r&&Math.abs(diff)<=(w.arc||w.spread)/2+.15;}return !!segmentHit(x,y,ex,ey,e,3);}
    if(sh.sender!==me&&!p.dead&&!sh.hit.has('self')&&hits(p)){sh.hit.add('self');applyPvPDamage(sh,sh.a,Math.min(45,w.dmg*8));if(!arc&&--sh.pierce<=0)sh.life=0;}
    if(host&&sh.life>0){
-    for(const e of S.enemies){if(e.dead||sh.hit.has(e.netId)||!hits(e))continue;sh.hit.add(e.netId);hurtEnemy(e,e.x,e.y,false,w.dmg);if(!arc&&--sh.pierce<=0){sh.life=0;break;}}
+    for(const e of S.enemies){if(e.dead||sh.hit.has(e.netId)||!hits(e))continue;sh.hit.add(e.netId);hurtEnemy(e,e.x,e.y,false,w.dmg,sh.sender);if(!arc&&--sh.pierce<=0){sh.life=0;break;}}
    }
    if(sh.speed){sh.x=ex;sh.y=ey;sh.remaining-=step;}
    else if(sh.first){S.shotFX.push(arc?{kind:'flame',x:sh.ox,y:sh.oy,a:sh.a,len:w.range,spread:w.arc||w.spread,color:w.color,life:.10,max:.10}:{kind:'beam',x:sh.ox,y:sh.oy,ex,ey,color:w.color,life:.10,max:.10});}
@@ -2481,7 +2511,7 @@ function updateOnlineCombat(dt,d){
   separateEnemies();S.enemies=S.enemies.filter(e=>!e.dead);
  }
  if(!p.dead){
-  for(const e of S.enemies){if(!e.dead&&Math.hypot(e.x-p.x,e.y-p.y)<e.r+p.r+3&&p.inv<=0&&!p.dash){const a=Math.atan2(p.y-e.y,p.x-e.x);if(!shieldActive()||reflectedAngle(a,p.fx,p.fy)===null){p.hp=Math.max(0,p.hp-8);S.hurtT=.35;p.inv=.65;if(!p.hp){p.dead=true;S.respawnAt=Date.now()+3000;S.msg='3초 후 재입장';S.msgT=3;}}}}
+  for(const e of S.enemies){if(!e.dead&&Math.hypot(e.x-p.x,e.y-p.y)<e.r+p.r+3&&p.inv<=0&&!p.dash){const a=Math.atan2(p.y-e.y,p.x-e.x);if(!shieldActive()||reflectedAngle(a,p.fx,p.fy)===null){p.hp=Math.max(0,p.hp-8);S.hurtT=.35;p.inv=.65;if(!p.hp)onlineDeath(null);}}}
   const w=activeWeapon();let near=null,dist=w?.range||0;
   for(const e of [...S.enemies,...Array.from(sharedRoom.peers.values()).filter(v=>!v.dead).map(v=>({x:v.tx,y:v.ty}))]){if(e.dead)continue;const l=Math.hypot(e.x-p.x,e.y-p.y);if(l<dist){dist=l;near=e;}}
   S.aim=near;S.meleeOut=w?.slot==='melee';
@@ -2491,6 +2521,40 @@ function updateOnlineCombat(dt,d){
  updateNetShots(d);
 }
 
+function scoreCount(v){return Number.isSafeInteger(v)?Math.max(0,Math.min(1000000,v)):0;}
+function scoreRank(rows){return rows.map(r=>({...r,points:r.kills*100+r.mobs*10})).sort((a,b)=>b.points-a.points||b.kills-a.kills||a.deaths-b.deaths||(a.id<b.id?-1:a.id>b.id?1:0));}
+function awardOnlineKill(category,to){
+ if(!sharedRoom?.ready||!to)return;
+ if(to===sharedRoom.id){if(category==='monster')S.monsterKills++;else if(category==='player')S.onlineKills++;return;}
+ sendShared({kind:'score',eid:eventId(),category,to});
+}
+function onlineDeath(killer){
+ const p=S.player;if(p.dead)return;
+ p.dead=true;p.dash=null;S.onlineDeaths++;S.respawnAt=Date.now()+3000;S.msg='3초 후 재입장';S.msgT=3;S.aim=null;
+ if(killer&&killer!==sharedRoom?.id)awardOnlineKill('player',killer);
+}
+let scoreRenderAt=-Infinity,scoreSignature='';
+function updateScoreboard(){
+ if(S.phase!=='online')return;
+ const now=performance.now();if(now-scoreRenderAt<500)return;scoreRenderAt=now;
+ const me=sharedRoom?.id||'local';
+ const rows=[{id:me,name:playerNickname,kills:S.onlineKills,mobs:S.monsterKills,deaths:S.onlineDeaths}];
+ if(sharedRoom)for(const p of sharedRoom.peers.values())rows.push({id:p.id,name:p.nickname||('P-'+p.id.slice(0,4)),kills:scoreCount(p.kills),mobs:scoreCount(p.mobs),deaths:scoreCount(p.deaths)});
+ const ranked=scoreRank(rows),signature=JSON.stringify(ranked);
+ if(signature===scoreSignature)return;scoreSignature=signature;
+ const $body=$('#scoreRows').empty();
+ ranked.forEach((r,i)=>{
+  const own=r.id===me,$tr=$('<tr>').attr('data-self',String(own));
+  $('<td>').text(i+1).appendTo($tr);
+  $('<th scope="row">').attr('title',r.name).text(r.name+(own?' (나)':'')).appendTo($tr);
+  [r.kills,r.mobs,r.deaths,r.points].forEach(v=>$('<td>').text(v).appendTo($tr));
+  $body.append($tr);
+ });
+ const rank=ranked.findIndex(r=>r.id===me)+1;
+ $('#scoreToggle').text('실시간 점수판 · 내 순위 '+rank+'/'+ranked.length+'위');
+}
+$('#scoreToggle').on('click',function(){const open=$(this).attr('aria-expanded')==='true';$(this).attr('aria-expanded',String(!open));$('#scorePanel').prop('hidden',open);});
+if(MOBILE){$('#scoreToggle').attr('aria-expanded','false');$('#scorePanel').prop('hidden',true);}
 let last=performance.now();
 function loop(now){
   const raw=(now-last)/1000;
