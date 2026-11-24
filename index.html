@@ -83,7 +83,7 @@
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
   <button type="button" id="slotToggle" hidden>무기 전환 (Q)</button>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v13</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v14</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -899,8 +899,7 @@ function hurtEnemy(e,bx,by,fromDash,dmg){
     return;
   }
   e.dead=true; S.kills++;
-  if(S.phase==='survive'&&(S.kills===1||S.kills%3===0))spawnWeaponDrop(e);
-  if(S.phase==='online'&&isSharedHost())spawnWeaponDrop(e);
+  if((S.phase==='survive'||(S.phase==='online'&&isSharedHost()))&&Math.random()<0.125)spawnWeaponDrop(e);
   if(S.phase==='intro'&&S.mission.step===2){S.target.x=e.x;S.target.y=e.y;}
   S.combo++; S.comboT=2.2; S.best=Math.max(S.best,S.combo);
   S.hitstop=Math.max(S.hitstop,(fromDash?0.07:0.05)*k);
