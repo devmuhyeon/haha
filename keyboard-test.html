@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>키보드 입력 진단</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:32px auto;padding:0 20px;color:#17202a;background:#fff}button,input{font:inherit;padding:10px;border:1px solid #606b76;border-radius:4px}button:focus-visible,input:focus-visible{outline:3px solid #145ac7;outline-offset:3px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f8;padding:14px;min-height:100px}#area{padding:20px;border:2px solid #77818c;border-radius:4px}#area:focus{outline:3px solid #145ac7;outline-offset:2px}</style></head><body>
+<h1>키보드 입력 진단</h1><p>아래 테스트 영역을 클릭하고 위·아래·왼쪽·오른쪽 방향키, 스페이스바, F를 각각 누르세요.</p>
+<div id="area" tabindex="0" aria-label="키보드 테스트 영역">키보드 테스트 영역 (클릭)</div>
+<p><label for="field">입력창 비교 테스트 (선택)</label><br><input id="field" type="text" lang="en" autocomplete="off" spellcheck="false" placeholder="여기에 키 입력"></p>
+<p id="status" role="status">입력 대기</p><pre id="log" aria-label="입력 기록"></pre><button type="button" id="copy">진단 결과 복사</button> <button type="button" id="reset">기록 초기화</button><p><a href="./?v=10">게임으로 돌아가기</a></p>
+<script>
+(function(){
+var rows=[], area=document.getElementById('area'), field=document.getElementById('field'), log=document.getElementById('log'), status=document.getElementById('status');
+function render(){log.textContent='focus='+document.hasFocus()+' / active='+((document.activeElement||{}).id||'body')+'\n'+rows.join('\n');}
+function record(e){var data={type:e.type,key:e.key,code:e.code,keyCode:e.keyCode,which:e.which,location:e.location,isComposing:e.isComposing,repeat:e.repeat,data:e.data,inputType:e.inputType,target:e.target.id||e.target.nodeName};rows.push(JSON.stringify(data));if(rows.length>40)rows.shift();if(e.type==='keydown')status.textContent='키 입력 수신: '+(e.code||e.key||e.keyCode||'값 없음');render();}
+['keydown','keyup','keypress','compositionstart','compositionend','beforeinput','input'].forEach(function(t){window.addEventListener(t,record,true);});
+window.addEventListener('focus',render);window.addEventListener('blur',render);document.addEventListener('focusin',render);area.addEventListener('click',function(){area.focus();render();});
+document.getElementById('reset').addEventListener('click',function(){rows=[];area.focus();status.textContent='입력 대기';render();});
+document.getElementById('copy').addEventListener('click',function(){if(navigator.clipboard)navigator.clipboard.writeText(log.textContent).then(function(){status.textContent='복사 완료';},function(){status.textContent='기록을 선택하여 복사하세요.';});else status.textContent='기록을 선택하여 복사하세요.';});
+area.focus();render();
+})();
+</script></body></html>
