@@ -26,6 +26,17 @@
   #gameKeyboard{width:155px;min-height:32px;box-sizing:border-box;padding:5px 8px;font:inherit;color:#fff;background:#19212b;border:1px solid #8392a3;border-radius:3px}
   #gameKeyboard::placeholder{color:#d5dce6}
   #gameKeyboard:focus{outline:2px solid #82ddab;outline-offset:2px}
+  #nicknameDialog{box-sizing:border-box;width:min(380px,calc(100% - 32px));max-width:100%;border:1px solid #536171;border-radius:12px;background:#18212c;color:#fff;padding:26px;box-shadow:0 12px 48px #0008}
+  #nicknameDialog::backdrop{background:rgba(7,12,18,.88)}
+  #nicknameDialog h1{margin:0 0 12px;font-size:23px}
+  #nicknameDialog p{font-size:14px;line-height:1.65;color:#d7e0ea}
+  #nicknameDialog label{display:block;font-weight:700;font-size:14px;margin:18px 0 8px}
+  #nicknameInput{box-sizing:border-box;width:100%;min-height:44px;padding:10px;background:#0e1721;border:1px solid #8c9bab;border-radius:5px;color:#fff;font:inherit}
+  #nicknameInput:focus-visible,#nicknameSubmit:focus-visible{outline:3px solid #8ddcff;outline-offset:3px}
+  #nicknameSubmit{width:100%;min-height:44px;margin-top:12px;background:#97d1e5;color:#10202c;font-weight:800}
+  #nicknameError{color:#ffb5ad;min-height:1.5em;margin:8px 0}
+  #nicknameHelp{margin:8px 0}
+  #playerNameHud{background:#19212b;color:#fff;padding:6px 8px;border-radius:3px}
   #weaponStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#fff}
   #onlineStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#e1eef9}
   #keyStatus{background:#19212b;padding:6px 8px;border-radius:3px;pointer-events:none}
@@ -70,8 +81,20 @@
 </style>
 </head>
 <body>
+<dialog id="nicknameDialog" aria-labelledby="nicknameTitle" aria-describedby="nicknameHelp">
+  <form id="nicknameForm" novalidate>
+    <h1 id="nicknameTitle">닉네임 설정</h1>
+    <p>온라인 전장에서 다른 플레이어에게 표시될 이름을 정하세요.</p>
+    <label for="nicknameInput">닉네임</label>
+    <input id="nicknameInput" name="nickname" type="text" maxlength="12" required autocomplete="off" spellcheck="false" autofocus aria-describedby="nicknameHelp nicknameError" placeholder="닉네임 입력">
+    <p id="nicknameHelp">한글·영문·숫자·밑줄(_) 2~12자. 닉네임은 다른 접속자에게 공개됩니다.</p>
+    <div id="nicknameError" role="alert"></div>
+    <button type="submit" id="nicknameSubmit">게임 시작</button>
+  </form>
+</dialog>
 <canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. WASD 또는 방향키로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
 <div id="gameControls" role="group" aria-label="게임 조작">
+  <span id="playerNameHud"></span>
   <label for="gameKeyboard">키보드 조작</label>
   <input id="gameKeyboard" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" lang="en" aria-describedby="keyboardHelp" placeholder="여기를 클릭하고 조작" />
   <span id="keyboardHelp" class="sr-only">WASD 또는 방향키 이동, Space 대시, F 획득. Tab으로 다른 요소에 이동할 수 있습니다.</span>
@@ -83,7 +106,7 @@
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
   <button type="button" id="slotToggle" hidden>무기 전환 (Q)</button>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v14</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v15</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -146,9 +169,10 @@ function inCircle(q,c,pad){ return Math.hypot(q.x-c.x,q.y-c.y)<c.r+(pad||0); }
 function inRect(q,r){ return q.x>=r.x&&q.x<=r.x+r.w&&q.y>=r.y&&q.y<=r.y+r.h; }
 const el=id=>document.getElementById(id);
 const menuEl=el('menu');
-let menuOpen=false;
+let menuOpen=false,playerNickname='';
+function normalizeNickname(value){if(typeof value!=='string')return '';const name=value.normalize('NFC').trim();return /^[가-힣a-zA-Z0-9_]{2,12}$/.test(name)?name:'';}
 function focusGame(){
-  if(menuOpen||invOpen)return;
+  if(!playerNickname||menuOpen||invOpen)return;
   $('#gameControls').prop('hidden',false);
   const field=el('gameKeyboard');
   if(MOBILE&&document.activeElement!==field)return;
@@ -631,6 +655,7 @@ function gameAudio(){
   catch(err){console.warn('Game audio:',err);}
 }
 function inputEvent(e){
+  if(!playerNickname)return;
   const raw=e.originalEvent||e,k=getGameKey(e);
   if(e.type==='keyup'){if(k)keys[k]=false;return;}
   if(!k||raw.ctrlKey||raw.metaKey||raw.altKey)return;
@@ -702,7 +727,7 @@ function updateGameControls(){
   updateWeaponHUD();
   if(lastPhase===view)return;
   lastPhase=view;
-  $('#gameControls').prop('hidden',menuOpen||invOpen);
+  $('#gameControls').prop('hidden',!playerNickname||menuOpen||invOpen);
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
   $('#onlineSwitch').prop('hidden',true);
@@ -712,12 +737,30 @@ function updateGameControls(){
   const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 연습이 시작됩니다.':phase==='online'?'온라인 전장. 다른 플레이어 및 몬스터 자동 공격. Q 무기 전환, F 획득.':phase==='survive'?'총기 연습. 빠른 적 12명 처치 후 온라인 전장 자동 입장.':'';
   $('#phaseStatus').text(message);
 }
-$(function(){if(!menuOpen&&!invOpen&&document.activeElement===document.body)focusGame();updateGameControls();});
+$(function(){
+  const dialog=el('nicknameDialog'),field=el('nicknameInput');
+  try{field.value=normalizeNickname(localStorage.getItem('topview.nickname'))||'';}catch(e){}
+  $('#gameControls').prop('hidden',true);
+  dialog.showModal();
+  $(field).trigger('focus');
+  $(dialog).on('cancel',function(e){e.preventDefault();});
+  $('#nicknameForm').on('submit',function(e){
+    e.preventDefault();
+    const name=normalizeNickname(field.value);
+    if(!name){$('#nicknameError').text('한글, 영문, 숫자, 밑줄을 사용해 2~12자로 입력하세요.');$(field).attr('aria-invalid','true').trigger('focus');return;}
+    playerNickname=name;
+    try{localStorage.setItem('topview.nickname',name);}catch(e){}
+    $('#nicknameError').text('');$(field).removeAttr('aria-invalid');
+    $('#playerNameHud').text(name);dialog.close();
+    lastPhase='';clearGameKeys();updateGameControls();gameAudio();focusGame();
+  });
+  $(field).on('input',function(){$('#nicknameError').text('');$(this).removeAttr('aria-invalid');});
+});
 let drag=null,lastTap=0;
 function at(ev){const r=cv.getBoundingClientRect();
   return {x:(ev.clientX-r.left)*(W/r.width),y:(ev.clientY-r.top)*(H/r.height)};}
 cv.addEventListener('pointerdown',e=>{
-  if(menuOpen||invOpen) return;
+  if(!playerNickname||menuOpen||invOpen) return;
   e.preventDefault(); focusGame(); gameAudio();
   const q=at(e);
   if(MOBILE){
@@ -2051,6 +2094,7 @@ function render(){
       s:p.s,col:PLAYER_COL,bob:p.bob,lean:p.lean+Math.sin(pk*9)*pk*0.12,
       flash:blink?0.1:0,punch:pk*0.5,face:p.face,wounds:p.wounds,
       gun:(p.armed&&rangedW()&&!meleeOut)?aim:null,muzzle:p.muzzle});
+    if(S.phase==='online')drawPlayerName(playerNickname,p.x,p.y-37,true);
   }
 
   if(!S.swing&&!p.dead&&meleeOut&&S.equip.melee==='bat'){
@@ -2264,13 +2308,13 @@ function makeSharedRoom(cfg){
     const x=Math.max(26,Math.min(874,m.x)),y=Math.max(26,Math.min(574,m.y));
     let p=peers.get(sender);
     if(!p){if(peers.size>=100)return;p={id:sender,x,y};peers.set(sender,p);}
-    p.tx=x;p.ty=y;p.fx=Math.max(-1,Math.min(1,m.fx));p.fy=Math.max(-1,Math.min(1,m.fy));p.bob=m.bob%6.283;p.armed=m.armed===true;p.hp=Number.isFinite(m.hp)?Math.max(0,Math.min(100,m.hp)):100;p.dead=p.hp<=0;p.weapon=Object.hasOwn(ITEMS,m.weapon)?m.weapon:'pistol';p.seen=cfg.now();
+    p.tx=x;p.ty=y;p.fx=Math.max(-1,Math.min(1,m.fx));p.fy=Math.max(-1,Math.min(1,m.fy));p.bob=m.bob%6.283;p.armed=m.armed===true;p.hp=Number.isFinite(m.hp)?Math.max(0,Math.min(100,m.hp)):100;p.dead=p.hp<=0;p.weapon=Object.hasOwn(ITEMS,m.weapon)?m.weapon:'pistol';p.nickname=normalizeNickname(m.nickname)||('P-'+sender.slice(0,4).toUpperCase());p.seen=cfg.now();
     report();
   }
   function publish(force){
     if(!ready||closed||!client||!client.connected)return;
     const p=cfg.pose();if(!p)return;
-    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*100)/100,armed:!!p.armed,hp:p.hp,weapon:p.weapon});
+    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*100)/100,armed:!!p.armed,hp:p.hp,weapon:p.weapon,nickname:p.nickname});
     const now=cfg.now();
     if(!force&&(now-lastSent<100||(pose===lastPose&&now-lastSent<1200)))return;
     try{client.publish(topic,pose,{qos:0,retain:false});lastPose=pose;lastSent=now;}catch(e){}
@@ -2356,7 +2400,7 @@ function ensureSharedRoom(){
   const id=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
   sharedRoom=makeSharedRoom({
     id,root:SHARED_ROOT,now:Date.now,
-    pose:()=>S.phase==='online'?{...S.player,weapon:activeWeapon()?.id}:null,
+    pose:()=>S.phase==='online'?{...S.player,weapon:activeWeapon()?.id,nickname:playerNickname}:null,
     event:receiveSharedEvent,
     connect:opts=>window.mqtt.connect(SHARED_BROKER,opts),
     report:(status,count)=>{if(S.phase==='online')setSharedStatus(status,count);}
@@ -2367,6 +2411,7 @@ function tickShared(){
   if(S.phase!=='online'){if(sharedRoom||sharedLoading)disconnectShared();return;}
   ensureSharedRoom();if(sharedRoom){sharedRoom.tick();if(isSharedHost())publishSharedWorld();}
 }
+function drawPlayerName(name,x,y,self){if(!name)return;ctx.save();ctx.font=fUI(13);ctx.textAlign='center';ctx.lineWidth=3;ctx.strokeStyle='#111820';ctx.strokeText(name,x,y,160);ctx.fillStyle=self?'#bdeaff':'#e8fff6';ctx.fillText(name,x,y,160);ctx.restore();}
 function drawSharedPlayers(){
   const now=performance.now(),dt=Math.min(100,now-sharedRenderTime);sharedRenderTime=now;
   if(!sharedRoom)return;
@@ -2378,9 +2423,7 @@ function drawSharedPlayers(){
     const w=ITEMS[p.weapon];drawChar({x:p.x,y:p.y,s:30,col:{b:'#72b9a4',s:'#377d69'},bob:p.bob,lean:0,flash:0,punch:0,face:'plain',gun:w?.slot==='ranged'?Math.atan2(p.fy,p.fx):null,muzzle:0});
     if(p.weapon==='shield')drawShield(p.x,p.y,Math.atan2(p.fy,p.fx));else if(w?.slot==='melee')drawEquippedMelee(p.x,p.y,Math.atan2(p.fy,p.fx),w);
     ctx.fillStyle='#222';ctx.fillRect(p.x-15,p.y-35,30,4);ctx.fillStyle='#70d5a0';ctx.fillRect(p.x-15,p.y-35,30*p.hp/100,4);
-    ctx.save();ctx.font=fUI(11);ctx.textAlign='center';
-    ctx.strokeStyle='#eaf2f7';ctx.lineWidth=3;ctx.strokeText('P-'+p.id.slice(0,4).toUpperCase(),p.x,p.y-25);
-    ctx.fillStyle='#174f43';ctx.fillText('P-'+p.id.slice(0,4).toUpperCase(),p.x,p.y-25);ctx.restore();
+    drawPlayerName(p.nickname||('P-'+p.id.slice(0,4).toUpperCase()),p.x,p.y-46,false);
   }
 }
 $('#onlineSwitch').on('click',function(){
@@ -2511,7 +2554,7 @@ function loop(now){
   if(FPS.t>=0.5){ FPS.v=FPS.n/FPS.t; FPS.t=0; FPS.n=0; }
   // 다음 프레임은 먼저 예약하여 일시적인 렌더 오류로 루프가 영구 종료되지 않게 한다.
   requestAnimationFrame(loop);
-  if(!menuOpen&&!invOpen){
+  if(playerNickname&&!menuOpen&&!invOpen){
     if(S.phase==='cut'){
       S.cutElapsed+=Math.min(Math.max(0,raw),1);
       if(S.cutElapsed>=25)finishCut();
