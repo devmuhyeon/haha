@@ -92,7 +92,7 @@
     <button type="submit" id="nicknameSubmit">게임 시작</button>
   </form>
 </dialog>
-<canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. WASD 또는 방향키로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
+<canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. WASD 또는 방향키로 이동, 스페이스바로 회피, F로 무기 획득 및 교체, Escape로 옵션."></canvas>
 <div id="gameControls" role="group" aria-label="게임 조작">
   <span id="playerNameHud"></span>
   <label for="gameKeyboard">키보드 조작</label>
@@ -105,24 +105,9 @@
   <button type="button" id="onlineSwitch" hidden>온라인 공간</button>
   <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
   <span id="onlineStatus" role="status" hidden></span><span id="weaponStatus" hidden></span><span id="lootStatus" class="sr-only" role="status"></span>
-  <button type="button" id="slotToggle" hidden>무기 전환 (Q)</button>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v15</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v16</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
-<div id="inv">
-  <div class="box">
-    <h2>INVENTORY</h2>
-    <div class="slots">
-      <div class="slot"><span class="tag">1  원거리</span><div class="cell" id="slotR"></div></div>
-      <div class="slot"><span class="tag">2  근접</span><div class="cell" id="slotM"></div></div>
-    </div>
-    <span class="tag" style="margin-top:14px">소지품</span>
-    <div class="bag" id="bag"></div>
-    <div class="tip" id="tip">&nbsp;</div>
-    <div class="btns"><button id="invClose">닫기</button></div>
-    <div class="hint">I — 인벤토리 · 아이템을 눌러 끼고 빼기</div>
-  </div>
-</div>
 <div id="menu">
   <div class="box">
     <h2>OPTIONS</h2>
@@ -163,7 +148,6 @@ const STICK={cx:132,cy:H-126,r:74,kr:31};
 const BTN_D={x:W-116,y:H-126,r:50,label:'회피'};
 const BTN_F={x:W-212,y:H-74,r:36,label:'F'};
 const HIT_MENU={x:W-150,y:10,w:140,h:32};
-const HIT_INV ={x:W-170,y:54,w:160,h:32};
 const stick={id:null,active:false,cx:STICK.cx,cy:STICK.cy,x:STICK.cx,y:STICK.cy};
 function inCircle(q,c,pad){ return Math.hypot(q.x-c.x,q.y-c.y)<c.r+(pad||0); }
 function inRect(q,r){ return q.x>=r.x&&q.x<=r.x+r.w&&q.y>=r.y&&q.y<=r.y+r.h; }
@@ -181,7 +165,6 @@ function focusGame(){
 function setMenu(v){
   clearGameKeys(); menuOpen=v; $(menuEl).toggleClass('on',v);
   if(v) $('#close').trigger('focus');
-  else if(invOpen) $('#invClose').trigger('focus');
   else focusGame();
 }
 el('gore').onchange=e=>{OPT.gore=e.target.checked;};
@@ -194,53 +177,16 @@ el('font').onchange=e=>{FS=FONTSETS[e.target.value]||FONTSETS.gothic;};
 el('fs').onclick=()=>{try{ document.fullscreenElement?document.exitFullscreen()
   :document.documentElement.requestFullscreen(); }catch(err){}};
 el('close').onclick=()=>setMenu(false);
-const invEl=el('inv');
-let invOpen=false;
-function setInv(v){
-  clearGameKeys(); invOpen=v; $(invEl).toggleClass('on',v);
-  if(v){ renderInv(); $('#invClose').trigger('focus'); }
-  else if(menuOpen) $('#close').trigger('focus');
-  else focusGame();
-}
-el('invClose').onclick=()=>setInv(false);
-function tipClear(){ el('tip').innerHTML='&nbsp;'; }
-function itemTile(id,where){
-  const it=ITEMS[id];
-  const d=document.createElement('button');
-  d.type='button'; d.className='item'; d.textContent=it.short;
-  const detail=it.name+(it.slot==='ranged'?' · '+it.mag+'발 / 장전 '+it.reload+'초':it.id==='shield'?' · 정면 탄 반사':' · 사거리 '+it.range);
-  d.setAttribute('aria-label',detail+(where==='equip'?' 장착 해제':' 장착'));
-  $(d).on('mouseenter focus',()=>{el('tip').textContent=detail;}).on('mouseleave blur',tipClear);
-  d.onclick=()=>{
-    if(where==='equip') unequipItem(it.slot); else equipItem(id);
-    renderInv();
-    $('#invClose').trigger('focus');
-  };
-  return d;
-}
+const invOpen=false;
 function equipItem(id){
   const it=ITEMS[id];
-  S.bag=S.bag.filter(x=>x!==id);
-  const cur=S.equip[it.slot];
-  if(cur&&cur!==id&&!S.bag.includes(cur))S.bag.push(cur);
+  if(!it)return;
+  if(S.equip[it.slot]===id&&S.activeSlot===it.slot)return;
+  S.equip={ranged:null,melee:null};
   S.equip[it.slot]=id;S.activeSlot=it.slot;
-  if(it.slot==='ranged'){S.player.armed=true;ammoState(it);}
-}
-function unequipItem(slot){
-  const cur=S.equip[slot];
-  if(!cur)return;
-  S.equip[slot]=null; if(!S.bag.includes(cur))S.bag.push(cur);
-}
-function renderInv(){
-  const r=el('slotR'), m=el('slotM'), bag=el('bag');
-  r.innerHTML=''; m.innerHTML=''; bag.innerHTML='';
-  if(S.equip.ranged) r.appendChild(itemTile(S.equip.ranged,'equip'));
-  else r.innerHTML='<span class="empty">비어 있음 — 사격 불가</span>';
-  if(S.equip.melee) m.appendChild(itemTile(S.equip.melee,'equip'));
-  else m.innerHTML='<span class="empty">비어 있음 — 박치기</span>';
-  if(S.bag.length){ for(const id of S.bag) bag.appendChild(itemTile(id,'bag')); }
-  else bag.innerHTML='<span class="empty">없음</span>';
-  tipClear();
+  S.bag=[];S.ammo={};S.gunCd=0;S.mCd=0;S.aim=null;S.swing=null;
+  S.player.armed=it.slot==='ranged';
+  if(it.slot==='ranged')ammoState(it);
 }
 el('rsFull').onclick=()=>{init(false);gameAudio();setMenu(false);};
 el('rsSkip').onclick=()=>{init(true);gameAudio();setMenu(false);};
@@ -612,8 +558,8 @@ function init(skip){
       dash:null,dcharge:2,dmax:2,drec:0,trail:[],bob:0,lean:0,muzzle:0,
       face:skip?'plain':'smile',armed:!!skip},
     enemies:[],bullets:[],parts:[],rings:[],ash:[],npcs:[],corpses:[],
-    equip:{ranged:skip?'pistol':null,melee:'bat'}, bag:[],
-    gunCd:0,mCd:0,swing:null,ammo:{},drops:[],dropDeck:[],shotFX:[],activeSlot:'ranged',cleared:false,netShots:[],onlineKills:0,respawnAt:0,
+    equip:{ranged:skip?'pistol':null,melee:skip?null:'bat'}, bag:[],
+    gunCd:0,mCd:0,swing:null,ammo:{},drops:[],dropDeck:[],shotFX:[],activeSlot:skip?'ranged':'melee',cleared:false,netShots:[],onlineKills:0,respawnAt:0,
     kills:0,spawned:0,spawnT:0.2,openingWave:true,survT:0,combo:0,comboT:0,best:0,
     hitstop:0,shake:0,flashR:0,flashW:0,zoom:0,slow:0,
     camZ:skip?0.09:0,camP:0,focus:null,blk:0,center:{x:452,y:300},
@@ -645,8 +591,8 @@ const moveKeys=['arrowup','arrowdown','arrowleft','arrowright'];
 function isMoveDown(k){return !!keys[k]||(keyPulse[k]||0)>performance.now();}
 function getGameKey(e){
  const raw=e.originalEvent||e;
- const map={KeyW:'arrowup',KeyA:'arrowleft',KeyS:'arrowdown',KeyD:'arrowright',ArrowUp:'arrowup',ArrowDown:'arrowdown',ArrowLeft:'arrowleft',ArrowRight:'arrowright',Space:' ',KeyF:'f',KeyI:'i',KeyP:'p',KeyK:'k',KeyQ:'q',Escape:'escape',w:'arrowup',a:'arrowleft',s:'arrowdown',d:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright',' ':' ',spacebar:' ',space:' ',f:'f',i:'i',p:'p',k:'k',q:'q',esc:'escape','ㅈ':'arrowup','ㅁ':'arrowleft','ㄴ':'arrowdown','ㅇ':'arrowright','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅏ':'k'};
- const numeric={87:'arrowup',65:'arrowleft',83:'arrowdown',68:'arrowright',38:'arrowup',40:'arrowdown',37:'arrowleft',39:'arrowright',32:' ',70:'f',73:'i',80:'p',75:'k',81:'q',27:'escape'};
+ const map={KeyW:'arrowup',KeyA:'arrowleft',KeyS:'arrowdown',KeyD:'arrowright',ArrowUp:'arrowup',ArrowDown:'arrowdown',ArrowLeft:'arrowleft',ArrowRight:'arrowright',Space:' ',KeyF:'f',KeyP:'p',KeyK:'k',Escape:'escape',w:'arrowup',a:'arrowleft',s:'arrowdown',d:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright',' ':' ',spacebar:' ',space:' ',f:'f',p:'p',k:'k',esc:'escape','ㅈ':'arrowup','ㅁ':'arrowleft','ㄴ':'arrowdown','ㅇ':'arrowright','ㄹ':'f','ㅔ':'p','ㅏ':'k'};
+ const numeric={87:'arrowup',65:'arrowleft',83:'arrowdown',68:'arrowright',38:'arrowup',40:'arrowdown',37:'arrowleft',39:'arrowright',32:' ',70:'f',80:'p',75:'k',27:'escape'};
  return map[raw.code]||map[String(raw.key||e.key||'').toLowerCase()]||numeric[raw.keyCode]||numeric[raw.which]||numeric[e.which]||'';
 }
 function clearGameKeys(){Object.keys(keys).forEach(k=>{keys[k]=false;});Object.keys(keyPulse).forEach(k=>{keyPulse[k]=0;});}
@@ -663,11 +609,10 @@ function inputEvent(e){
   const control=!own&&$(target).closest('input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
   if(k==='escape'){
     e.preventDefault();
-    if(!raw.repeat){if(invOpen)setInv(false);else setMenu(!menuOpen);}
+    if(!raw.repeat)setMenu(!menuOpen);
     return;
   }
   if(menuOpen||invOpen||control)return;
-  if(k==='i'&&S.phase==='intro')return;
   e.preventDefault();
   const repeat=!!keys[k]||!!raw.repeat;
   keys[k]=true;
@@ -676,9 +621,7 @@ function inputEvent(e){
   }
   $('#keyStatus').text('입력: '+(k===' '?'SPACE':k.toUpperCase()));
   if(repeat)return;
-  if(k==='q'){toggleWeapon();return;}
   if(k==='p'){setMenu(true);return;}
-  if(k==='i'){setInv(true);return;}
   if(S.phase==='cut')return;
   if(k===' '||k==='f'){
     drag=null;
@@ -712,7 +655,6 @@ $('#gameKeyboard').on('focus.topview',function(){clearGameKeys();$('#keyStatus')
 $(window).on('blur.topview',function(){if(!document.hasFocus())clearGameKeys();});
 $(document).on('visibilitychange.topview',function(){if(document.hidden)clearGameKeys();});
 $('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
-$('#slotToggle').on('click',()=>{toggleWeapon();focusGame();});
 function skipStory(){
   if(S.phase!=='intro'&&S.phase!=='cut')return;
   clearGameKeys();if(S.phase==='cut')finishCut();else enterSharedSpace();gameAudio();focusGame();updateGameControls();
@@ -731,10 +673,9 @@ function updateGameControls(){
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
   $('#onlineSwitch').prop('hidden',true);
-  $('#slotToggle').prop('hidden',canSkip);
   $('#onlineStatus').prop('hidden',phase!=='online');
   if(phase!=='online')$('#onlineRetry').prop('hidden',true);
-  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 연습이 시작됩니다.':phase==='online'?'온라인 전장. 다른 플레이어 및 몬스터 자동 공격. Q 무기 전환, F 획득.':phase==='survive'?'총기 연습. 빠른 적 12명 처치 후 온라인 전장 자동 입장.':'';
+  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 연습이 시작됩니다.':phase==='online'?'온라인 전장. 다른 플레이어 및 몬스터 자동 공격. F 무기 획득 시 기존 무기 교체.':phase==='survive'?'총기 연습. 빠른 적 12명 처치 후 온라인 전장 자동 입장.':'';
   $('#phaseStatus').text(message);
 }
 $(function(){
@@ -765,7 +706,6 @@ cv.addEventListener('pointerdown',e=>{
   const q=at(e);
   if(MOBILE){
     if(inRect(q,HIT_MENU)){ setMenu(true); return; }
-    if(inRect(q,HIT_INV)&&S.phase!=='intro'){ setInv(true); return; }
   }
   if(S.over){init(true);syncMusic();return;}
   if(MOBILE){
@@ -1130,9 +1070,8 @@ function tryInteract(){
   if(S.phase==='online'){requestSharedLoot(item);return;}
   S.drops.splice(S.drops.indexOf(item),1);collectWeapon(item.weapon);
 }
-function collectWeapon(id){const w=ITEMS[id];if(!w)return;equipItem(id);S.swing=null;S.msg=w.name+' 획득 · 장착';S.msgT=2.4;$('#lootStatus').text(S.msg);sfx.pickup();}
+function collectWeapon(id){const w=ITEMS[id];if(!w)return;equipItem(id);S.swing=null;S.msg=w.name+' 획득 · 기존 무기 교체';S.msgT=2.4;$('#lootStatus').text(S.msg);sfx.pickup();}
 function ammoState(w){if(!S.ammo[w.id])S.ammo[w.id]={left:w.mag,reload:0};return S.ammo[w.id];}
-function toggleWeapon(){if(S.phase!=='online'&&S.phase!=='survive')return;S.activeSlot=S.activeSlot==='ranged'?'melee':'ranged';S.aim=null;S.msg='무기 전환 · '+(S.activeSlot==='ranged'?(rangedW()?.name||'맨손'):meleeW().name);S.msgT=1.1;}
 function activeWeapon(){return S.activeSlot==='melee'?(meleeW()):rangedW()||meleeW();}
 function shieldActive(){return S.activeSlot==='melee'&&S.equip.melee==='shield';}
 function nearWeaponDrop(){if(S.phase!=='survive'&&S.phase!=='online')return null;let best=null,dist=56;for(const item of S.drops){const d=Math.hypot(S.player.x-item.x,S.player.y-item.y);if(d<=dist){best=item;dist=d;}}return best;}
@@ -1494,7 +1433,7 @@ function startGunCombat(keepRaid){
   S.phase='survive'; S.survT=0; S.kills=0; S.spawned=keepRaid?S.enemies.length:0; S.spawnT=0.15; S.openingWave=true;
   if(!keepRaid) S.enemies=[]; S.bullets=[]; S.aim=null; S.combo=0; S.comboT=0; S.best=0; S.slow=0; S.hitstop=0;
   p.hp=p.hpMax; p.inv=1.2; p.dcharge=p.dmax; p.drec=0; p.face='plain'; p.wounds=[];
-  S.activeSlot='ranged';S.msg='총기 연습 · 빠른 적 12명 처치'; S.msgT=2.6;
+  S.msg='총기 연습 · 빠른 적 12명 처치'; S.msgT=2.6;
   applyTone(1); gameAudio();
 }
 function updateIntro(d){
@@ -2175,13 +2114,11 @@ function render(){
     ctx.font=fUI(13);
     ctx.fillStyle=dim?'rgba(140,150,162,0.6)':'rgba(84,96,110,0.62)';
     ctx.fillText(MOBILE?'메뉴':'메뉴  [ESC]',W-20,30);
-    if(S.phase!=='intro') ctx.fillText(MOBILE?'인벤토리':'인벤토리  [I]',W-20,74);
   }
   if((S.phase==='survive'||S.phase==='online')&&!S.over){
     ctx.textAlign='left'; ctx.font=fUI(13);
     ctx.fillStyle=dim?'rgba(140,150,162,0.6)':'rgba(84,96,110,0.62)';
-    const rw2=rangedW(), mw2=meleeW();
-    ctx.fillText('Q 무기 전환 · '+(activeWeapon()?.name||'맨손'),20,H-20);
+    ctx.fillText('장착 무기 · '+(activeWeapon()?.name||'맨손'),20,H-20);
   }
 
   if(S.phase==='survive'||S.phase==='online'||S.over){
@@ -2377,7 +2314,7 @@ function enterSharedSpace(){
   S.phase='online';S.enemies=[];S.bullets=[];S.npcs=[];S.corpses=[];S.parts=[];
   S.aim=null;S.swing=null;S.meleeOut=false;S.over=false;
   const p=S.player;p.x=100+Math.random()*700;p.y=110+Math.random()*380;
-  collide(p,p.s*0.39);p.face='plain';p.armed=true;
+  collide(p,p.s*0.39);p.face='plain';p.armed=activeWeapon()?.slot==='ranged';
   p.inv=2;S.msg='온라인 PvP 전장 입장';S.msgT=2.5;S.focus={x:p.x,y:p.y};S.camZ=0.03;
   applyTone(1);gameAudio();updateGameControls();focusGame();ensureSharedRoom();
 }
