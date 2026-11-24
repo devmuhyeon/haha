@@ -72,7 +72,7 @@
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
   <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v7</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v8</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -602,7 +602,9 @@ function init(skip){
 init(false);
 
 /* ===== 입력 ===== */
-const keys=Object.create(null);
+const keys=Object.create(null),keyPulse=Object.create(null);
+const moveKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'];
+function isMoveDown(k){return !!keys[k]||(keyPulse[k]||0)>performance.now();}
 const keyCodes={87:'w',65:'a',83:'s',68:'d',32:' ',37:'arrowleft',38:'arrowup',39:'arrowright',40:'arrowdown',70:'f',73:'i',80:'p',27:'escape',75:'k'};
 const hangulKeys={'ㅈ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅏ':'k'};
 const gameKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','f','i','p','escape','k'];
@@ -617,7 +619,7 @@ function getGameKey(e){
   if(gameKeys.includes(key))return key;
   return hangulKeys[key]||keyCodes[ev.keyCode||e.which||e.keyCode]||'';
 }
-function clearGameKeys(){ Object.keys(keys).forEach(k=>{keys[k]=false;}); }
+function clearGameKeys(){ Object.keys(keys).forEach(k=>{keys[k]=false;}); Object.keys(keyPulse).forEach(k=>{keyPulse[k]=0;}); }
 function gameAudio(){
   try{
     const a=audio();
@@ -625,47 +627,50 @@ function gameAudio(){
     syncMusic();
   }catch(err){ console.warn('Game audio:',err); }
 }
-// 하나의 캡처 리스너로 실제 KeyboardEvent를 수신한다.
-// jQuery 래퍼의 이벤트 복제나 중복 수신 판별에 의존하지 않는다.
 function inputEvent(e){
   const raw=e.originalEvent||e;
-  const k=getGameKey(e);
-  if(e.type==='keydown') $('#keyStatus').text('입력 수신: '+(raw.code||raw.key||raw.keyCode||'?'));
-  if(!gameKeys.includes(k))return;
-  if(e.type==='keyup'){keys[k]=false;return;}
-  if(e.ctrlKey||e.metaKey||e.altKey)return;
-  const repeat=!!raw.repeat||!!keys[k];
-  const control=$(e.target).closest('input,select,textarea,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
-  if(k==='escape'){
-    e.preventDefault();
-    if(!repeat){if(invOpen)setInv(false);else setMenu(!menuOpen);}
-    keys[k]=true;return;
+  const k=getGameKey(raw);
+  if(e.type==='keyup'){
+    if(k)keys[k]=false;
+    return;
   }
-  // 설정 UI 및 일반 버튼의 기본 키보드 동작은 보존한다.
-  if(control&&(menuOpen||invOpen||k===' '||$(e.target).closest('input,select,textarea,[contenteditable]:not([contenteditable="false"])').length))return;
-  if(k==='p'||k==='i'){
+  const target=raw.target||e.target;
+  const isControl=target&&target.nodeType===1&&$(target).closest('input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
+  const label=String(raw.code||raw.key||raw.keyCode||'?');
+  if(!gameKeys.includes(k)){$('#keyStatus').text('미인식: '+label);return;}
+  if(raw.ctrlKey||raw.metaKey||raw.altKey)return;
+  const repeat=!!keys[k]||!!raw.repeat;
+  if(k==='escape'||k==='p'||k==='i'){
     if(k==='i'&&S.phase==='intro')return;
+    if(k!=='escape'&&isControl&&menuOpen)return;
     e.preventDefault();
-    if(!repeat){if(k==='p'&&!invOpen)setMenu(!menuOpen);if(k==='i'&&!menuOpen)setInv(!invOpen);}
+    if(!repeat){
+      if(k==='escape'){if(invOpen)setInv(false);else setMenu(!menuOpen);}
+      else if(k==='p'&&!invOpen)setMenu(!menuOpen);
+      else if(k==='i'&&!menuOpen)setInv(!invOpen);
+    }
     keys[k]=true;return;
   }
-  if(menuOpen||invOpen)return;
+  if(menuOpen||invOpen||isControl)return;
   e.preventDefault();
   keys[k]=true;
-  if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))drag=null;
-  $('#keyStatus').text('입력: '+(k===' '?'SPACE':k.toUpperCase()));
-  if(S.phase==='cut')return; // 컷신은 명시적 건너뛰기 버튼으로만 생략한다.
-  if(k==='k'&&OPT.fps&&!repeat&&S.phase==='survive'){
-    S.player.hp=0;woundPlayer(S.enemies[0],false);startDeath(S.enemies[0]||null);return;
+  if(moveKeys.includes(k)){
+    drag=null;
+    if(!repeat)keyPulse[k]=performance.now()+90;
   }
-  if(S.over&&(k==='f'||k===' ')){
-    if(!repeat){init(true);gameAudio();}return;
+  if(k===' '){drag=null;}
+  if(!repeat&&S.phase!=='cut'){
+    if(S.over&&(k==='f'||k===' '))init(true);
+    else if(k===' ')tryDash();
+    else if(k==='f')tryInteract();
+    else if(k==='k'&&OPT.fps&&S.phase==='survive'){
+      S.player.hp=0;woundPlayer(S.enemies[0],false);startDeath(S.enemies[0]||null);
+    }
   }
-  if(k===' '&&!repeat)tryDash();
-  if(k==='f'&&!repeat)tryInteract();
+  $('#keyStatus').text('수신: '+label+' → '+(k===' '?'SPACE':k.toUpperCase()));
   if(!repeat)gameAudio();
 }
-// jQuery 문서 이벤트가 기본 경로이며, 캡처 수신은 전파 차단 시에도 보장한다.
+// 실제 이벤트는 창의 캡처 단계에서 처리하고, jQuery 이벤트는 보조 경로로 사용한다.
 const seenKeys=new WeakSet();
 function receiveKey(e){
   const ev=e.originalEvent||e;
@@ -673,16 +678,14 @@ function receiveKey(e){
   seenKeys.add(ev);
   inputEvent(e);
 }
+$.each(['keydown','keyup'],(_,type)=>window.addEventListener(type,receiveKey,{capture:true,passive:false}));
 $(document).on('keydown.topview keyup.topview',receiveKey);
-$.each(['keydown','keyup'],(_,type)=>document.addEventListener(type,ev=>receiveKey($.Event(ev)),{capture:true,passive:false}));
-$(window).on('blur.topview',e=>{if(e.target!==window)return;clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');});
+$(window).on('blur.topview',()=>{if(!document.hasFocus()){clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');}});
 $(document).on('visibilitychange.topview',()=>{if(document.hidden)clearGameKeys();});
-$(cv).on('focus.topview',()=>{$('#keyStatus').text('키보드 준비 · WASD / SPACE / F');});
-$(cv).on('blur.topview',()=>{if(menuOpen||invOpen)clearGameKeys();});
-$(cv).on('pointerdown.topview click.topview',()=>{if(!menuOpen&&!invOpen)focusGame();});
-$(document).on('focusin.topview','input,select,textarea,[contenteditable=true]',clearGameKeys);
+$(cv).on('pointerdown.topview',()=>{if(!menuOpen&&!invOpen)focusGame();});
+$(document).on('focusin.topview','input,select,textarea,button,a[href],[contenteditable=true]',clearGameKeys);
 $('#keyboardStart').on('click',()=>{
-  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키보드 준비 · WASD / SPACE / F');
+  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키 입력 대기 · WASD / SPACE / F');
 });
 $('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
 function skipStory(){
@@ -1056,10 +1059,10 @@ function tryDash(){
   const p=S.player;
   if(p.dash||p.dcharge<=0)return;
   let dx=p.fx,dy=p.fy,mx=0,my=0;
-  if(keys['a']||keys['arrowleft'])mx-=1;
-  if(keys['d']||keys['arrowright'])mx+=1;
-  if(keys['w']||keys['arrowup'])my-=1;
-  if(keys['s']||keys['arrowdown'])my+=1;
+  if(isMoveDown('a')||isMoveDown('arrowleft'))mx-=1;
+  if(isMoveDown('d')||isMoveDown('arrowright'))mx+=1;
+  if(isMoveDown('w')||isMoveDown('arrowup'))my-=1;
+  if(isMoveDown('s')||isMoveDown('arrowdown'))my+=1;
   if(mx||my){const L=Math.hypot(mx,my);dx=mx/L;dy=my/L;}
   else if(MOBILE&&stick.active){
     const ax=stick.x-stick.cx,ay=stick.y-stick.cy,L=Math.hypot(ax,ay);
@@ -1420,10 +1423,10 @@ function updatePlayer(dt,d){
     if(p.dash.t>=p.dash.dur)p.dash=null;
   }else{
     let mx=0,my=0;
-    if(keys['a']||keys['arrowleft'])mx-=1;
-    if(keys['d']||keys['arrowright'])mx+=1;
-    if(keys['w']||keys['arrowup'])my-=1;
-    if(keys['s']||keys['arrowdown'])my+=1;
+    if(isMoveDown('a')||isMoveDown('arrowleft'))mx-=1;
+    if(isMoveDown('d')||isMoveDown('arrowright'))mx+=1;
+    if(isMoveDown('w')||isMoveDown('arrowup'))my-=1;
+    if(isMoveDown('s')||isMoveDown('arrowdown'))my+=1;
     if(!mx&&!my&&MOBILE&&stick.active){
       const dx=stick.x-stick.cx, dy=stick.y-stick.cy, L=Math.hypot(dx,dy);
       if(L>10){ const n=Math.min(1,L/STICK.r); mx=(dx/L)*n; my=(dy/L)*n; }
