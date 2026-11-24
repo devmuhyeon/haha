@@ -67,10 +67,12 @@
 <body>
 <canvas id="c" width="900" height="600" tabindex="0" aria-label="탑뷰 액션 게임. WASD 또는 방향키로 이동, 스페이스바로 회피, F로 상호작용, I로 인벤토리, Escape로 옵션."></canvas>
 <div id="gameControls" role="group" aria-label="게임 조작">
-  <button type="button" id="keyboardStart">키보드 조작</button>
+  <button type="button" id="keyboardStart">키보드 조작 시작</button>
+  <button type="button" id="dashGame">회피 (Space)</button>
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
-  <span id="keyStatus" aria-hidden="true">키 입력 대기</span>
+  <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v6</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -134,7 +136,7 @@ function inRect(q,r){ return q.x>=r.x&&q.x<=r.x+r.w&&q.y>=r.y&&q.y<=r.y+r.h; }
 const el=id=>document.getElementById(id);
 const menuEl=el('menu');
 let menuOpen=false;
-function focusGame(){ try{cv.focus({preventScroll:true});}catch(err){$(cv).trigger('focus');} }
+function focusGame(){ try{window.focus();}catch(err){} try{cv.focus({preventScroll:true});}catch(err){$(cv).trigger('focus');} }
 function setMenu(v){
   clearGameKeys(); menuOpen=v; $(menuEl).toggleClass('on',v);
   if(v) $('#close').trigger('focus');
@@ -216,8 +218,8 @@ function K(){return OPT.pow;}
 function goreOn(){return OPT.gore&&tone.blood>0.5;}
 const lerp=(a,b,t)=>a+(b-a)*t;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const GOAL=30;
-const OPENING_ENEMIES=10, MAX_ACTIVE_ENEMIES=12;
+const GOAL=90;
+const OPENING_ENEMIES=30, MAX_ACTIVE_ENEMIES=36, PRACTICE_ENEMIES=3;
 
 /* ===== 글씨체 ===== */
 const FONTSETS={
@@ -605,16 +607,14 @@ const keyCodes={87:'w',65:'a',83:'s',68:'d',32:' ',37:'arrowleft',38:'arrowup',3
 const hangulKeys={'ㅈ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅏ':'k'};
 const gameKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','f','i','p','escape','k'];
 function getGameKey(e){
-  const native=e.originalEvent||e;
-  const code=native.code||e.code||'';
+  const code=e.code||'';
+  const key=String(e.key||'').toLowerCase();
   if(/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-  if(code==='Space') return ' ';
+  if(code==='Space'||key==='spacebar'||key==='space') return ' ';
   if(/^Arrow(Up|Down|Left|Right)$/.test(code)||code==='Escape') return code.toLowerCase();
-  const key=(native.key||e.key||'').toLowerCase();
-  if(key==='spacebar'||key==='space') return ' ';
-  if(key==='esc') return 'escape';
-  if(gameKeys.includes(key)) return key;
-  return keyCodes[native.keyCode||e.which||e.keyCode]||hangulKeys[key]||key;
+  if(key==='esc')return 'escape';
+  if(gameKeys.includes(key))return key;
+  return hangulKeys[key]||keyCodes[e.keyCode||e.which]||'';
 }
 function clearGameKeys(){ Object.keys(keys).forEach(k=>{keys[k]=false;}); }
 function gameAudio(){
@@ -624,25 +624,24 @@ function gameAudio(){
     syncMusic();
   }catch(err){ console.warn('Game audio:',err); }
 }
-// 캔버스, 문서, 창의 입력을 동일한 핸들러에서 처리한다.
-// 캡처 단계에서도 수신하므로 내부 위젯의 버블링 차단에 영향을 받지 않는다.
-const handledEvents=new WeakSet();
+// 하나의 캡처 리스너로 실제 KeyboardEvent를 수신한다.
+// jQuery 래퍼의 이벤트 복제나 중복 수신 판별에 의존하지 않는다.
 function inputEvent(e){
-  const native=e.originalEvent||e;
-  if(handledEvents.has(native))return;
-  handledEvents.add(native);
   const k=getGameKey(e);
-  if(e.ctrlKey||e.metaKey||e.altKey||!gameKeys.includes(k))return;
+  if(!gameKeys.includes(k))return;
   if(e.type==='keyup'){keys[k]=false;return;}
-  const repeat=!!native.repeat||!!keys[k];
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const repeat=!!e.repeat||!!keys[k];
   const control=$(e.target).closest('input,select,textarea,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
   if(k==='escape'){
     e.preventDefault();
     if(!repeat){if(invOpen)setInv(false);else setMenu(!menuOpen);}
     keys[k]=true;return;
   }
+  // 설정 UI 및 일반 버튼의 기본 키보드 동작은 보존한다.
   if(control&&(menuOpen||invOpen||k===' '||$(e.target).closest('input,select,textarea,[contenteditable]:not([contenteditable="false"])').length))return;
   if(k==='p'||k==='i'){
+    if(k==='i'&&S.phase==='intro')return;
     e.preventDefault();
     if(!repeat){if(k==='p'&&!invOpen)setMenu(!menuOpen);if(k==='i'&&!menuOpen)setInv(!invOpen);}
     keys[k]=true;return;
@@ -665,18 +664,17 @@ function inputEvent(e){
   if(k==='f'&&!repeat)tryInteract();
   if(!repeat)gameAudio();
 }
-$(cv).add(document).add(window).on('keydown.topview keyup.topview',inputEvent);
-// jQuery 이벤트에는 capture 옵션이 없어 네이티브 수신 후 jQuery 이벤트로 전달한다.
-$.each(['keydown','keyup'],(_,type)=>{
-  window.addEventListener(type,ev=>inputEvent($.Event(ev)),true);
-});
-$(window).on('blur.topview',clearGameKeys);
+$.each(['keydown','keyup'],(_,type)=>window.addEventListener(type,inputEvent,{capture:true,passive:false}));
+$(window).on('blur.topview',()=>{clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');});
 $(document).on('visibilitychange.topview',()=>{if(document.hidden)clearGameKeys();});
+$(cv).on('focus.topview',()=>{$('#keyStatus').text('키보드 준비 · WASD / SPACE / F');});
+$(cv).on('blur.topview',()=>{if(menuOpen||invOpen)clearGameKeys();});
 $(cv).on('pointerdown.topview click.topview',()=>{if(!menuOpen&&!invOpen)focusGame();});
 $(document).on('focusin.topview','input,select,textarea,[contenteditable=true]',clearGameKeys);
 $('#keyboardStart').on('click',()=>{
-  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키 입력 대기');
+  clearGameKeys();focusGame();gameAudio();$('#keyStatus').text('키보드 준비 · WASD / SPACE / F');
 });
+$('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
 function skipStory(){
   if(S.phase!=='intro'&&S.phase!=='cut')return;
   clearGameKeys();init(true);gameAudio();focusGame();updateGameControls();
@@ -693,7 +691,7 @@ function updateGameControls(){
   $('#gameControls').prop('hidden',menuOpen||invOpen);
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
-  const message=phase==='intro'?['권총이 있는 목표 지점까지 이동하세요.','F키로 권총을 획득하세요.','권총 장착 완료. 스페이스바로 회피하세요.','튜토리얼 완료. 전투 준비 중.'][S.mission.step]:phase==='cut'?'컷신 재생 중. 스페이스바 또는 건너뛰기로 전투를 시작할 수 있습니다.':phase==='survive'?'전투 시작. WASD로 이동하고 스페이스바로 회피하세요.':'';
+  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'컷신 재생 중. 스페이스바 또는 건너뛰기로 전투를 시작할 수 있습니다.':phase==='survive'?'전투 시작. WASD로 이동하고 스페이스바로 회피하세요.':'';
   $('#phaseStatus').text(message);
 }
 $(function(){if(!menuOpen&&!invOpen&&document.activeElement===document.body)focusGame();updateGameControls();});
@@ -878,6 +876,7 @@ function hurtEnemy(e,bx,by,fromDash,dmg){
     return;
   }
   e.dead=true; S.kills++;
+  if(S.phase==='intro'&&S.mission.step===2){S.target.x=e.x;S.target.y=e.y;}
   S.combo++; S.comboT=2.2; S.best=Math.max(S.best,S.combo);
   S.hitstop=Math.max(S.hitstop,(fromDash?0.07:0.05)*k);
   S.shake=Math.max(S.shake,(fromDash?4.2:3)*k);
@@ -1063,7 +1062,7 @@ function tryDash(){
   p.dcharge--; p.inv=Math.max(p.inv,0.24); p.trail=[];
   ringfx(p.x,p.y,6,42,2,'rgba(200,210,222,',0.2);
   S.shake=Math.max(S.shake,1.5*K()); S.camP=Math.max(S.camP||0,0.016*K());
-  S.tut.dashed=true;
+  if(S.phase!=='intro'||S.mission.step===1) S.tut.dashed=true;
   sfx.dash(K());
 }
 function pickupPistol(){
@@ -1077,14 +1076,14 @@ function pickupPistol(){
 function tryInteract(){
   if(!S||menuOpen||invOpen||S.over)return;
   if(S.phase==='intro'){
-    if(S.tut.picked)return;
+    if(S.tut.picked||S.mission.step!==3)return;
     const p=S.player,T=S.target;
     if(Math.hypot(T.x-p.x,T.y-p.y)>56){
       S.msg='권총 가까이 이동하세요';S.msgT=1.5;return;
     }
-    S.mission.step=2; S.mission.t=0; S.tut.dashed=false;
     pickupPistol();
     ringfx(T.x,T.y,6,76,3,'rgba(214,180,110,',0.55);
+    startGunCombat();
     updateGameControls();return;
   }
   if(S.phase==='note'){
@@ -1442,16 +1441,39 @@ function updatePlayer(dt,d){
   collide(p,hw*0.78);
 }
 
+function startPractice(){
+  const p=S.player;
+  S.mission.step=2; S.kills=0; S.npcs=[];
+  S.msg='근접전 연습 · 적 3명 처치'; S.msgT=2;
+  p.face='plain'; p.inv=Math.max(p.inv,0.5);
+  for(let i=0;i<PRACTICE_ENEMIES;i++){
+    const a=Math.atan2(H/2-p.y,W/2-p.x)+(i-1)*0.85;
+    const e=makeEnemy(clamp(p.x+Math.cos(a)*130,BX0+24,BX1-24),clamp(p.y+Math.sin(a)*130,BY0+24,BY1-24),'grunt',{sp:58,dmg:3,atkCd:1.5});
+    collide(e,e.r); ringfx(e.x,e.y,4,36,2,'rgba(176,188,202,',0.45);
+  }
+}
+function startGunCombat(){
+  const p=S.player;
+  S.phase='survive'; S.survT=0; S.kills=0; S.spawned=0; S.spawnT=0.15; S.openingWave=true;
+  S.enemies=[]; S.bullets=[]; S.aim=null; S.combo=0; S.comboT=0; S.best=0; S.slow=0; S.hitstop=0;
+  p.hp=p.hpMax; p.inv=1.2; p.dcharge=p.dmax; p.drec=0; p.face='plain'; p.wounds=[];
+  S.msg='권총 장착 · 적 90명 처치'; S.msgT=2.6;
+  applyTone(1); gameAudio();
+}
 function updateIntro(d){
-  const p=S.player, M=S.mission;
+  const p=S.player,M=S.mission;
   S.target.ph+=d*2.2;
-  if(M.step<2){
-    M.step=Math.hypot(S.target.x-p.x,S.target.y-p.y)<=56?1:0;
-  }else if(M.step===2){
-    if(S.tut.dashed){ M.step=3; M.t=0; S.msg='참 잘했어요'; S.msgT=2.6; }
-  }else{
-    M.t+=d;
-    if(M.t>3.0) beginCut();
+  if(M.step===0&&S.tut.moved){M.step=1; S.tut.dashed=false;}
+  else if(M.step===1&&S.tut.dashed&&!p.dash){startPractice();}
+  else if(M.step===2){
+    updateWeapons(d); updateEnemies(d,d); separateEnemies();
+    S.enemies=S.enemies.filter(e=>!e.dead);
+    if(S.kills>=PRACTICE_ENEMIES&&S.enemies.length===0){
+      M.step=3; S.aim=null; S.meleeOut=false;
+      S.target.x=clamp(S.target.x,BX0+24,BX1-24); S.target.y=clamp(S.target.y,BY0+24,BY1-24);
+      collide(S.target,10);
+      S.msg='F · 떨어진 권총 획득'; S.msgT=3;
+    }
   }
   for(const n of S.npcs)n.ph+=d*1.5;
 }
@@ -1462,7 +1484,7 @@ function updateCombat(d){
   const left=GOAL-S.spawned;
   if(S.spawnT<=0&&left>0){
     const room=Math.max(0,MAX_ACTIVE_ENEMIES-S.enemies.length);
-    const batch=S.openingWave?Math.max(0,OPENING_ENEMIES-S.enemies.length):3+Math.min(2,Math.floor(S.survT/12));
+    const batch=S.openingWave?Math.max(0,OPENING_ENEMIES-S.enemies.length):9+Math.min(6,Math.floor(S.survT/12));
     const n=Math.min(left,room,batch);
     for(let i=0;i<n;i++)spawnEnemy(false);
     S.spawned+=n; S.openingWave=false;
@@ -1470,7 +1492,10 @@ function updateCombat(d){
   }
   if(!S.enemies.length){ S.aim=null; S.meleeOut=false; }
   if(left<=0&&S.enemies.length===0&&!S.obj&&!S.revealDone) startReveal();
-  const rw=rangedW(), mw=meleeW();
+  updateWeapons(d);
+}
+function updateWeapons(d){
+  const p=S.player,rw=rangedW(),mw=meleeW();
   let near=null,nd=rw?rw.range:0;
   let mNear=null,mnd=mw.range;
   for(const e of S.enemies){
@@ -2002,7 +2027,7 @@ function render(){
     const q=enemyPos(e);
     drawBlade(q.x,q.y,e.s,e.aim,(e.lunge||0)-(e.wind||0)*0.5,e.bloody,e.side);
   }
-  if(S.phase==='intro'&&!S.tut.picked){
+  if(S.phase==='intro'&&S.mission.step===3&&!S.tut.picked){
     const T=S.target, pu=1+Math.sin(T.ph)*0.07;
     ctx.save(); ctx.translate(T.x,T.y);
     ctx.strokeStyle='rgba(206,150,66,'+(0.30+Math.sin(T.ph)*0.14).toFixed(2)+')';
@@ -2015,7 +2040,7 @@ function render(){
     ctx.fillStyle='#28313b';ctx.fillRect(-10,-5,20,6);ctx.fillRect(-7,0,6,9);
     ctx.restore();
     ctx.font=fUI(14);ctx.textAlign='center';ctx.fillStyle='#202a34';
-    ctx.fillText(S.mission.step===1?'F · 권총 획득':'권총',T.x,T.y-40);
+    ctx.fillText('F · 권총 획득',T.x,T.y-40);
   }
 
   drawObjective();
@@ -2058,7 +2083,7 @@ function render(){
     else if(drag)aim=Math.atan2(drag.y-p.y,drag.x-p.x);
     else aim=Math.atan2(p.fy,p.fx);
   }
-  const meleeOut=(S.meleeOut||!!S.swing||!rangedW())&&S.phase!=='intro';
+  const meleeOut=(S.meleeOut||!!S.swing||!rangedW())&&(S.phase!=='intro'||S.mission.step===2);
   const blink=S.phase!=='death'&&p.inv>0&&Math.floor(p.inv*20)%2===0;
   if(!p.dead){
     const pk=p.punch||0;
@@ -2068,7 +2093,7 @@ function render(){
       gun:(p.armed&&rangedW()&&!meleeOut)?aim:null,muzzle:p.muzzle});
   }
 
-  if(!S.swing&&!p.dead&&p.armed&&meleeOut&&S.equip.melee==='bat'){
+  if(!S.swing&&!p.dead&&meleeOut&&S.equip.melee==='bat'){
     drawBat(p.x,p.y,p.s,(aim!==null?aim:0)+0.55);
   }
   drawSwing();
@@ -2124,15 +2149,15 @@ function render(){
   ctx.font=fUI(13);
   ctx.textAlign='left';
 
-  if(S.phase==='intro'&&S.mission.step<3){
+  if(S.phase==='intro'){
     const step=S.mission.step;
     ctx.textAlign='center';
     ctx.font=fUI(26);
     ctx.fillStyle='rgba(38,48,60,0.94)';
-    ctx.fillText(['1.  권총이 있는 곳으로 이동','2.  권총 획득','3.  회피하기'][step],W/2,62);
+    ctx.fillText(['1.  이동하기','2.  대시하기','3.  근접전 · '+S.kills+' / '+PRACTICE_ENEMIES,'4.  권총 획득'][step],W/2,62);
     ctx.font=fUI(18);
     ctx.fillStyle='rgba(74,86,100,0.72)';
-    ctx.fillText(MOBILE?['왼쪽 화면을 끌어서','F 버튼','회피 버튼'][step]:['W   A   S   D','F','S P A C E'][step],W/2,92);
+    ctx.fillText(MOBILE?['왼쪽 화면을 끌어서','회피 버튼','적에게 접근 · 자동 공격','F 버튼'][step]:['W   A   S   D','S P A C E','적에게 접근 · 자동 공격','F'][step],W/2,92);
   }
   if(S.phase!=='cut'){
     ctx.textAlign='right';
@@ -2289,7 +2314,7 @@ function drawTouchUI(){
   };
   const p=S.player;
   btn(BTN_D,15,p.dcharge>0);
-  const objNear=(S.phase==='intro'&&!S.tut.picked&&Math.hypot(S.target.x-p.x,S.target.y-p.y)<=56)||(S.obj&&S.phase==='survive'&&Math.hypot(S.obj.x-p.x,S.obj.y-p.y)<74)||S.phase==='note';
+  const objNear=(S.phase==='intro'&&S.mission.step===3&&!S.tut.picked&&Math.hypot(S.target.x-p.x,S.target.y-p.y)<=56)||(S.obj&&S.phase==='survive'&&Math.hypot(S.obj.x-p.x,S.obj.y-p.y)<74)||S.phase==='note';
   btn(BTN_F,16,!!objNear);
 }
 let last=performance.now();
