@@ -72,7 +72,7 @@
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
   <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v8</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v9</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -610,14 +610,27 @@ const hangulKeys={'ㅈ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','�
 const gameKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','f','i','p','escape','k'];
 function getGameKey(e){
   const ev=e.originalEvent||e;
-  const code=ev.code||e.code||'';
-  const key=String(ev.key||e.key||'').toLowerCase();
-  if(/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-  if(code==='Space'||key==='spacebar'||key==='space') return ' ';
-  if(/^Arrow(Up|Down|Left|Right)$/.test(code)||code==='Escape') return code.toLowerCase();
-  if(key==='esc')return 'escape';
-  if(gameKeys.includes(key))return key;
-  return hangulKeys[key]||keyCodes[ev.keyCode||e.which||e.keyCode]||'';
+  const map={w:'w',a:'a',s:'s',d:'d',f:'f',i:'i',p:'p',k:'k',arrowup:'arrowup',arrowdown:'arrowdown',arrowleft:'arrowleft',arrowright:'arrowright',up:'arrowup',down:'arrowdown',left:'arrowleft',right:'arrowright',escape:'escape',esc:'escape',' ':' ',space:' ',spacebar:' ','ㅈ':'w','ㅉ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅖ':'p','ㅏ':'k','ᄌ':'w','ᄍ':'w','ᄆ':'a','ᄂ':'s','ᄋ':'d','ᄅ':'f','ᅣ':'i','ᅦ':'p','ᅨ':'p','ᅡ':'k'};
+  for(const v of [ev.code,e.code,ev.key,e.key,ev.keyIdentifier,e.keyIdentifier]){
+    if(v==null)continue;
+    let k=String(v).toLowerCase();
+    if(/^key[a-z]$/.test(k))k=k.slice(3);
+    if(/^u\+[0-9a-f]{4,6}$/.test(k)){const n=parseInt(k.slice(2),16);if(n<=0x10ffff)k=String.fromCodePoint(n).toLowerCase();}
+    if(k!==' ')k=k.trim();
+    if(Object.prototype.hasOwnProperty.call(map,k))return map[k];
+    const j=k.normalize('NFKD');
+    if(Object.prototype.hasOwnProperty.call(map,j))return map[j];
+  }
+  const legacy={87:'w',65:'a',83:'s',68:'d',32:' ',37:'arrowleft',38:'arrowup',39:'arrowright',40:'arrowdown',70:'f',73:'i',80:'p',27:'escape',75:'k'};
+  for(const v of [ev.keyCode,ev.which,e.keyCode,e.which,ev.charCode,e.charCode]){
+    const n=Number(v);
+    if(!n||n===229)continue;
+    if(ev.type==='keypress'||e.type==='keypress'){
+      const ch=String.fromCodePoint(n).toLowerCase();
+      if(Object.prototype.hasOwnProperty.call(map,ch))return map[ch];
+    }else if(Object.prototype.hasOwnProperty.call(legacy,n))return legacy[n];
+  }
+  return '';
 }
 function clearGameKeys(){ Object.keys(keys).forEach(k=>{keys[k]=false;}); Object.keys(keyPulse).forEach(k=>{keyPulse[k]=0;}); }
 function gameAudio(){
@@ -636,9 +649,13 @@ function inputEvent(e){
   }
   const target=raw.target||e.target;
   const isControl=target&&target.nodeType===1&&$(target).closest('input,textarea,select,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
-  const label=String(raw.code||raw.key||raw.keyCode||'?');
-  if(!gameKeys.includes(k)){$('#keyStatus').text('미인식: '+label);return;}
+  const label='code='+JSON.stringify(raw.code||'')+' / key='+JSON.stringify(raw.key||'')+' / keyCode='+(raw.keyCode||0)+' / which='+(raw.which||0);
+  if(!gameKeys.includes(k)){
+    if(!['Tab','Shift','Control','Alt','Meta','CapsLock','HangulMode','HanjaMode'].includes(raw.key))$('#keyStatus').text('미인식: '+label+(raw.isComposing||raw.keyCode===229?' · 한/영 전환 후 재시도':''));
+    return;
+  }
   if(raw.ctrlKey||raw.metaKey||raw.altKey)return;
+  const fallback=e.type==='keypress';
   const repeat=!!keys[k]||!!raw.repeat;
   if(k==='escape'||k==='p'||k==='i'){
     if(k==='i'&&S.phase==='intro')return;
@@ -653,10 +670,10 @@ function inputEvent(e){
   }
   if(menuOpen||invOpen||isControl)return;
   e.preventDefault();
-  keys[k]=true;
+  if(!fallback)keys[k]=true;
   if(moveKeys.includes(k)){
     drag=null;
-    if(!repeat)keyPulse[k]=performance.now()+90;
+    if(!repeat||fallback)keyPulse[k]=performance.now()+(fallback?160:90);
   }
   if(k===' '){drag=null;}
   if(!repeat&&S.phase!=='cut'){
@@ -680,6 +697,11 @@ function receiveKey(e){
 }
 $.each(['keydown','keyup'],(_,type)=>window.addEventListener(type,receiveKey,{capture:true,passive:false}));
 $(document).on('keydown.topview keyup.topview',receiveKey);
+// 일부 IME/브라우저는 keydown에서 문자를 제공하지 않고 keypress에서만 전달한다.
+$(document).on('keypress.topview',function(e){
+  const k=getGameKey(e);
+  if((moveKeys.includes(k)||k===' '||k==='f')&&!keys[k])inputEvent(e);
+});
 $(window).on('blur.topview',()=>{if(!document.hasFocus()){clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');}});
 $(document).on('visibilitychange.topview',()=>{if(document.hidden)clearGameKeys();});
 $(cv).on('pointerdown.topview',()=>{if(!menuOpen&&!invOpen)focusGame();});
