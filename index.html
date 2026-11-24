@@ -72,7 +72,7 @@
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
   <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v6</span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v7</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -136,7 +136,7 @@ function inRect(q,r){ return q.x>=r.x&&q.x<=r.x+r.w&&q.y>=r.y&&q.y<=r.y+r.h; }
 const el=id=>document.getElementById(id);
 const menuEl=el('menu');
 let menuOpen=false;
-function focusGame(){ try{window.focus();}catch(err){} try{cv.focus({preventScroll:true});}catch(err){$(cv).trigger('focus');} }
+function focusGame(){ try{cv.focus({preventScroll:true});}catch(err){$(cv).trigger('focus');} }
 function setMenu(v){
   clearGameKeys(); menuOpen=v; $(menuEl).toggleClass('on',v);
   if(v) $('#close').trigger('focus');
@@ -607,14 +607,15 @@ const keyCodes={87:'w',65:'a',83:'s',68:'d',32:' ',37:'arrowleft',38:'arrowup',3
 const hangulKeys={'ㅈ':'w','ㅁ':'a','ㄴ':'s','ㅇ':'d','ㄹ':'f','ㅑ':'i','ㅔ':'p','ㅏ':'k'};
 const gameKeys=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','f','i','p','escape','k'];
 function getGameKey(e){
-  const code=e.code||'';
-  const key=String(e.key||'').toLowerCase();
+  const ev=e.originalEvent||e;
+  const code=ev.code||e.code||'';
+  const key=String(ev.key||e.key||'').toLowerCase();
   if(/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
   if(code==='Space'||key==='spacebar'||key==='space') return ' ';
   if(/^Arrow(Up|Down|Left|Right)$/.test(code)||code==='Escape') return code.toLowerCase();
   if(key==='esc')return 'escape';
   if(gameKeys.includes(key))return key;
-  return hangulKeys[key]||keyCodes[e.keyCode||e.which]||'';
+  return hangulKeys[key]||keyCodes[ev.keyCode||e.which||e.keyCode]||'';
 }
 function clearGameKeys(){ Object.keys(keys).forEach(k=>{keys[k]=false;}); }
 function gameAudio(){
@@ -627,11 +628,13 @@ function gameAudio(){
 // 하나의 캡처 리스너로 실제 KeyboardEvent를 수신한다.
 // jQuery 래퍼의 이벤트 복제나 중복 수신 판별에 의존하지 않는다.
 function inputEvent(e){
+  const raw=e.originalEvent||e;
   const k=getGameKey(e);
+  if(e.type==='keydown') $('#keyStatus').text('입력 수신: '+(raw.code||raw.key||raw.keyCode||'?'));
   if(!gameKeys.includes(k))return;
   if(e.type==='keyup'){keys[k]=false;return;}
   if(e.ctrlKey||e.metaKey||e.altKey)return;
-  const repeat=!!e.repeat||!!keys[k];
+  const repeat=!!raw.repeat||!!keys[k];
   const control=$(e.target).closest('input,select,textarea,button,a[href],[contenteditable]:not([contenteditable="false"])').length;
   if(k==='escape'){
     e.preventDefault();
@@ -649,11 +652,9 @@ function inputEvent(e){
   if(menuOpen||invOpen)return;
   e.preventDefault();
   keys[k]=true;
+  if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))drag=null;
   $('#keyStatus').text('입력: '+(k===' '?'SPACE':k.toUpperCase()));
-  if(S.phase==='cut'){
-    if((k===' '||k==='f')&&!repeat)skipStory();
-    return;
-  }
+  if(S.phase==='cut')return; // 컷신은 명시적 건너뛰기 버튼으로만 생략한다.
   if(k==='k'&&OPT.fps&&!repeat&&S.phase==='survive'){
     S.player.hp=0;woundPlayer(S.enemies[0],false);startDeath(S.enemies[0]||null);return;
   }
@@ -664,8 +665,17 @@ function inputEvent(e){
   if(k==='f'&&!repeat)tryInteract();
   if(!repeat)gameAudio();
 }
-$.each(['keydown','keyup'],(_,type)=>window.addEventListener(type,inputEvent,{capture:true,passive:false}));
-$(window).on('blur.topview',()=>{clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');});
+// jQuery 문서 이벤트가 기본 경로이며, 캡처 수신은 전파 차단 시에도 보장한다.
+const seenKeys=new WeakSet();
+function receiveKey(e){
+  const ev=e.originalEvent||e;
+  if(seenKeys.has(ev))return;
+  seenKeys.add(ev);
+  inputEvent(e);
+}
+$(document).on('keydown.topview keyup.topview',receiveKey);
+$.each(['keydown','keyup'],(_,type)=>document.addEventListener(type,ev=>receiveKey($.Event(ev)),{capture:true,passive:false}));
+$(window).on('blur.topview',e=>{if(e.target!==window)return;clearGameKeys();$('#keyStatus').text('창 포커스 없음 · 게임 화면 클릭');});
 $(document).on('visibilitychange.topview',()=>{if(document.hidden)clearGameKeys();});
 $(cv).on('focus.topview',()=>{$('#keyStatus').text('키보드 준비 · WASD / SPACE / F');});
 $(cv).on('blur.topview',()=>{if(menuOpen||invOpen)clearGameKeys();});
@@ -677,7 +687,7 @@ $('#keyboardStart').on('click',()=>{
 $('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
 function skipStory(){
   if(S.phase!=='intro'&&S.phase!=='cut')return;
-  clearGameKeys();init(true);gameAudio();focusGame();updateGameControls();
+  clearGameKeys();if(S.phase==='cut')finishCut();else init(true);gameAudio();focusGame();updateGameControls();
 }
 $('#skipStory').on('click',skipStory);
 $('#interactGame').on('click',()=>{focusGame();gameAudio();tryInteract();});
@@ -691,7 +701,7 @@ function updateGameControls(){
   $('#gameControls').prop('hidden',menuOpen||invOpen);
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
-  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'컷신 재생 중. 스페이스바 또는 건너뛰기로 전투를 시작할 수 있습니다.':phase==='survive'?'전투 시작. WASD로 이동하고 스페이스바로 회피하세요.':'';
+  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 전투가 시작됩니다.':phase==='survive'?'전투 시작. WASD로 이동하고 스페이스바로 회피하세요.':'';
   $('#phaseStatus').text(message);
 }
 $(function(){if(!menuOpen&&!invOpen&&document.activeElement===document.body)focusGame();updateGameControls();});
@@ -1083,7 +1093,7 @@ function tryInteract(){
     }
     pickupPistol();
     ringfx(T.x,T.y,6,76,3,'rgba(214,180,110,',0.55);
-    startGunCombat();
+    beginCut();
     updateGameControls();return;
   }
   if(S.phase==='note'){
@@ -1317,8 +1327,7 @@ function finishCut(){
   S.blk=0;S.hitstop=0;S.slow=0;S.camZ=0.09;
   p.face='plain';p.armed=true;
   for(const e of S.enemies){delete e.exec;delete e.stab;delete e.stabT;}
-  S.spawned=S.enemies.length;S.spawnT=0.2;S.openingWave=true;
-  S.msg='살아남아라';S.msgT=2.6;applyTone(1);syncMusic();
+  startGunCombat(true);
 }
 function updateCamera(dt){
   const p=S.player;
@@ -1443,7 +1452,7 @@ function updatePlayer(dt,d){
 
 function startPractice(){
   const p=S.player;
-  S.mission.step=2; S.kills=0; S.npcs=[];
+  S.mission.step=2; S.kills=0;
   S.msg='근접전 연습 · 적 3명 처치'; S.msgT=2;
   p.face='plain'; p.inv=Math.max(p.inv,0.5);
   for(let i=0;i<PRACTICE_ENEMIES;i++){
@@ -1452,10 +1461,10 @@ function startPractice(){
     collide(e,e.r); ringfx(e.x,e.y,4,36,2,'rgba(176,188,202,',0.45);
   }
 }
-function startGunCombat(){
+function startGunCombat(keepRaid){
   const p=S.player;
-  S.phase='survive'; S.survT=0; S.kills=0; S.spawned=0; S.spawnT=0.15; S.openingWave=true;
-  S.enemies=[]; S.bullets=[]; S.aim=null; S.combo=0; S.comboT=0; S.best=0; S.slow=0; S.hitstop=0;
+  S.phase='survive'; S.survT=0; S.kills=0; S.spawned=keepRaid?S.enemies.length:0; S.spawnT=0.15; S.openingWave=true;
+  if(!keepRaid) S.enemies=[]; S.bullets=[]; S.aim=null; S.combo=0; S.comboT=0; S.best=0; S.slow=0; S.hitstop=0;
   p.hp=p.hpMax; p.inv=1.2; p.dcharge=p.dmax; p.drec=0; p.face='plain'; p.wounds=[];
   S.msg='권총 장착 · 적 90명 처치'; S.msgT=2.6;
   applyTone(1); gameAudio();
