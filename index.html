@@ -26,6 +26,7 @@
   #gameKeyboard{width:155px;min-height:32px;box-sizing:border-box;padding:5px 8px;font:inherit;color:#fff;background:#19212b;border:1px solid #8392a3;border-radius:3px}
   #gameKeyboard::placeholder{color:#d5dce6}
   #gameKeyboard:focus{outline:2px solid #82ddab;outline-offset:2px}
+  #onlineStatus{background:#19212b;padding:6px 8px;border-radius:3px;color:#e1eef9}
   #keyStatus{background:#19212b;padding:6px 8px;border-radius:3px;pointer-events:none}
   #gameControls[hidden],#gameControls [hidden]{display:none}
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
@@ -77,7 +78,10 @@
   <button type="button" id="interactGame">획득 / 상호작용 (F)</button>
   <button type="button" id="skipStory">튜토리얼 건너뛰기</button>
   <span id="keyStatus" aria-hidden="true">키보드 준비 중</span>
-  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v11</span>
+  <button type="button" id="onlineSwitch" hidden>온라인 공간</button>
+  <button type="button" id="onlineRetry" hidden>온라인 다시 연결</button>
+  <span id="onlineStatus" role="status" hidden></span>
+  <span aria-hidden="true" style="font-size:11px;color:#d5dce6">v12</span>
 </div>
 <div id="phaseStatus" class="sr-only" role="status"></div>
 <div id="inv">
@@ -487,7 +491,7 @@ $.each(sfx,(name,fn)=>{if(typeof fn==='function')sfx[name]=safeSound(fn);});
 $.each(music,(name,fn)=>{if(typeof fn==='function')music[name]=safeSound(fn);});
 function syncMusic(){
   if(!ac)return;
-  if(S.phase==='intro') music.set('happy');
+  if(S.phase==='intro'||S.phase==='online') music.set('happy');
   else if(S.phase==='survive'||S.phase==='note'||S.over) music.set('grim');
 }
 
@@ -685,7 +689,7 @@ $(document).on('visibilitychange.topview',function(){if(document.hidden)clearGam
 $('#dashGame').on('click',()=>{focusGame();tryDash();gameAudio();});
 function skipStory(){
   if(S.phase!=='intro'&&S.phase!=='cut')return;
-  clearGameKeys();if(S.phase==='cut')finishCut();else init(true);gameAudio();focusGame();updateGameControls();
+  clearGameKeys();if(S.phase==='cut')finishCut();else enterSharedSpace();gameAudio();focusGame();updateGameControls();
 }
 $('#skipStory').on('click',skipStory);
 $('#interactGame').on('click',()=>{focusGame();gameAudio();tryInteract();});
@@ -699,7 +703,10 @@ function updateGameControls(){
   $('#gameControls').prop('hidden',menuOpen||invOpen);
   const canSkip=phase==='intro'||phase==='cut';
   $('#skipStory').prop('hidden',!canSkip).text(phase==='cut'?'컷신 건너뛰기':'튜토리얼 건너뛰기');
-  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 총기 전투가 시작됩니다.':phase==='survive'?'전투 시작. WASD 또는 방향키로 이동하고 스페이스바로 회피하세요.':'';
+  $('#onlineSwitch').prop('hidden',canSkip).text(phase==='online'?'혼자 전투 (90명)':'온라인 공간 입장');
+  $('#onlineStatus').prop('hidden',phase!=='online');
+  if(phase!=='online')$('#onlineRetry').prop('hidden',true);
+  const message=phase==='intro'?['WASD 또는 방향키로 이동하세요.','스페이스바로 대시하세요.','다가오는 적 3명을 근접 공격으로 처치하세요.','F키로 떨어진 권총을 획득하세요.'][S.mission.step]:phase==='cut'?'습격 컷신 재생 중. 종료 후 온라인 공간에 입장합니다.':phase==='online'?'온라인 공동 공간. 같은 주소의 접속자와 함께 이동할 수 있습니다.':phase==='survive'?'전투 시작. WASD 또는 방향키로 이동하고 스페이스바로 회피하세요.':'';
   $('#phaseStatus').text(message);
 }
 $(function(){if(!menuOpen&&!invOpen&&document.activeElement===document.body)focusGame();updateGameControls();});
@@ -1050,7 +1057,7 @@ function hurtPlayer(e){
 }
 function tryDash(){
   if(!S||S.over)return;
-  if(S.phase!=='intro'&&S.phase!=='survive')return;
+  if(S.phase!=='intro'&&S.phase!=='survive'&&S.phase!=='online')return;
   const p=S.player;
   if(p.dash||p.dcharge<=0)return;
   let dx=p.fx,dy=p.fy,mx=0,my=0;
@@ -1325,7 +1332,7 @@ function finishCut(){
   S.blk=0;S.hitstop=0;S.slow=0;S.camZ=0.09;
   p.face='plain';p.armed=true;
   for(const e of S.enemies){delete e.exec;delete e.stab;delete e.stabT;}
-  startGunCombat(true);
+  enterSharedSpace();
 }
 function updateCamera(dt){
   const p=S.player;
@@ -1362,6 +1369,7 @@ function update(dt){
 
   if(!S.over) updatePlayer(dt,d);
   if(S.phase==='intro'){ updateIntro(d); return; }
+  if(S.phase==='online')return;
   if(!S.over) updateCombat(d);
   updateEnemies(dt,d);
   separateEnemies();
@@ -1379,7 +1387,7 @@ function tickTimers(dt,d){
   if(p.inv>0)p.inv=Math.max(0,p.inv-dt);
   if(p.muzzle>0)p.muzzle=Math.max(0,p.muzzle-dt);
   if(p.punch>0)p.punch=Math.max(0,p.punch-dt*4.2);
-  if((S.phase==='survive'||S.phase==='intro')&&p.dcharge<p.dmax){
+  if((S.phase==='survive'||S.phase==='intro'||S.phase==='online')&&p.dcharge<p.dmax){
     p.drec+=d;
     if(p.drec>=1.15){p.drec=0;p.dcharge++;sfx.charge();}
   }
@@ -2076,6 +2084,7 @@ function render(){
     ctx.lineTo(b.x-b.vx*0.018,b.y-b.vy*0.018); ctx.stroke();
   }
 
+  if(S.phase==='online')drawSharedPlayers();
   const p=S.player;
   for(let i=0;i<p.trail.length;i++){
     const a=(i+1)/p.trail.length*0.3;
@@ -2156,6 +2165,11 @@ function render(){
   ctx.font=fUI(13);
   ctx.textAlign='left';
 
+  if(S.phase==='online'){
+    ctx.textAlign='center';ctx.font=fUI(22);ctx.fillStyle='#263748';
+    ctx.fillText('온라인 공동 공간',W/2,85);
+    ctx.font=fUI(14);ctx.fillText('자유 이동 · 다른 접속자와 함께하기',W/2,108);
+  }
   if(S.phase==='intro'){
     const step=S.mission.step;
     ctx.textAlign='center';
@@ -2324,6 +2338,147 @@ function drawTouchUI(){
   const objNear=(S.phase==='intro'&&S.mission.step===3&&!S.tut.picked&&Math.hypot(S.target.x-p.x,S.target.y-p.y)<=56)||(S.obj&&S.phase==='survive'&&Math.hypot(S.obj.x-p.x,S.obj.y-p.y)<74)||S.phase==='note';
   btn(BTN_F,16,!!objNear);
 }
+
+/* ===== 온라인 공동 공간 (개인정보 없이 임의 세션 ID와 위치만 교환) ===== */
+function makeSharedRoom(cfg){
+  const peers=new Map(),id=cfg.id,root=cfg.root,topic=root+id;
+  let client=null,ready=false,closed=false,lastSent=-Infinity,lastPose='',status='연결 중',lastCount=-1,lastStatus='';
+  function report(){
+    const count=peers.size+(ready?1:0);
+    if(lastCount!==count||lastStatus!==status){lastCount=count;lastStatus=status;cfg.report(status,count);}
+  }
+  function receive(t,buf){
+    if(closed||!ready||typeof t!=='string'||!t.startsWith(root)||buf.length>512)return;
+    const sender=t.slice(root.length);
+    if(sender===id||!/^[a-f0-9]{24}$/.test(sender))return;
+    let m;try{m=JSON.parse(buf.toString());}catch(e){return;}
+    if(!m||m.v!==1)return;
+    if(m.kind==='leave'){peers.delete(sender);report();return;}
+    if(m.kind!=='pose'||!Number.isFinite(m.x)||!Number.isFinite(m.y)||!Number.isFinite(m.fx)||!Number.isFinite(m.fy)||!Number.isFinite(m.bob))return;
+    const x=Math.max(26,Math.min(874,m.x)),y=Math.max(26,Math.min(574,m.y));
+    let p=peers.get(sender);
+    if(!p){if(peers.size>=100)return;p={id:sender,x,y};peers.set(sender,p);}
+    p.tx=x;p.ty=y;p.fx=Math.max(-1,Math.min(1,m.fx));p.fy=Math.max(-1,Math.min(1,m.fy));p.bob=m.bob%6.283;p.armed=m.armed===true;p.seen=cfg.now();
+    report();
+  }
+  function publish(force){
+    if(!ready||closed||!client||!client.connected)return;
+    const p=cfg.pose();if(!p)return;
+    const pose=JSON.stringify({v:1,kind:'pose',x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,fx:Math.round(p.fx*100)/100,fy:Math.round(p.fy*100)/100,bob:Math.round((p.bob%6.283)*100)/100,armed:!!p.armed});
+    const now=cfg.now();
+    if(!force&&(now-lastSent<100||(pose===lastPose&&now-lastSent<1200)))return;
+    try{client.publish(topic,pose,{qos:0,retain:false});lastPose=pose;lastSent=now;}catch(e){}
+  }
+  function offline(){
+    if(closed)return;ready=false;peers.clear();status='재연결 중';report();
+  }
+  function start(){
+    if(client||closed)return;
+    report();
+    try{
+      client=cfg.connect({clientId:'tv_'+id,clean:true,keepalive:15,connectTimeout:8000,reconnectPeriod:2500,queueQoSZero:false,will:{topic,payload:JSON.stringify({v:1,kind:'leave'}),qos:0,retain:false}});
+      client.on('connect',()=>{
+        if(closed)return;
+        client.subscribe(root+'+',{qos:0},(err,granted)=>{
+          if(closed||!client.connected)return;
+          if(err||!granted||granted.some(g=>g.qos>2)){status='공간 연결 실패';ready=false;report();return;}
+          ready=true;status='온라인';lastSent=-Infinity;report();publish(true);
+        });
+      });
+      client.on('message',receive);
+      client.on('reconnect',offline);
+      client.on('offline',offline);
+      client.on('close',offline);
+      client.on('error',()=>{if(!closed&&!ready){status='연결 실패 · 재시도 중';report();}});
+    }catch(e){status='연결 실패';report();}
+  }
+  function tick(){
+    if(closed)return;
+    const now=cfg.now();for(const [key,p] of peers)if(now-p.seen>8000)peers.delete(key);
+    report();publish(false);
+  }
+  function stop(){
+    if(closed)return;
+    closed=true;
+    if(client){
+      try{
+        if(client.connected){client.publish(topic,JSON.stringify({v:1,kind:'leave'}),{qos:0,retain:false});client.end(false);}
+        else client.end(true);
+      }catch(e){}
+    }
+    ready=false;peers.clear();
+  }
+  return {start,tick,stop,peers,get ready(){return ready;}};
+}
+const SHARED_ROOT='topview/devmuhyeon/haha/room-v1/';
+const SHARED_BROKER='wss://broker.emqx.io:8084/mqtt';
+const MQTT_CDN='https://cdn.jsdelivr.net/npm/mqtt@5.16.1/dist/mqtt.min.js';
+let sharedRoom=null,sharedLoading=false,sharedGeneration=0,sharedRetryAt=0,sharedRenderTime=0;
+function setSharedStatus(status,count){
+  const text=status==='온라인'?'온라인 · 접속 '+count+'명':status;
+  if($('#onlineStatus').text()!==text)$('#onlineStatus').text(text);
+  $('#onlineRetry').prop('hidden',!status.includes('실패'));
+}
+function enterSharedSpace(){
+  if(S.phase==='online')return;
+  clearGameKeys();drag=null;init(true);
+  S.phase='online';S.enemies=[];S.bullets=[];S.npcs=[];S.corpses=[];S.parts=[];
+  S.aim=null;S.swing=null;S.meleeOut=false;S.obj=null;S.over=false;
+  const p=S.player;p.x=100+Math.random()*700;p.y=110+Math.random()*380;
+  collide(p,p.s*0.39);p.face='plain';p.armed=true;
+  S.msg='온라인 공동 공간 입장';S.msgT=2.5;S.focus={x:p.x,y:p.y};S.camZ=0.03;
+  applyTone(0);gameAudio();updateGameControls();focusGame();ensureSharedRoom();
+}
+function disconnectShared(){
+  sharedGeneration++;sharedLoading=false;
+  if(sharedRoom){sharedRoom.stop();sharedRoom=null;}
+  sharedRetryAt=0;
+}
+function ensureSharedRoom(){
+  if(S.phase!=='online'||sharedRoom||sharedLoading||Date.now()<sharedRetryAt)return;
+  if(!window.mqtt){
+    sharedLoading=true;const generation=++sharedGeneration;
+    setSharedStatus('온라인 연결 중',0);
+    $.ajax({url:MQTT_CDN,dataType:'script',cache:true,crossDomain:true,timeout:10000})
+      .done(()=>{if(generation!==sharedGeneration)return;sharedLoading=false;if(window.mqtt)ensureSharedRoom();else{sharedRetryAt=Date.now()+10000;setSharedStatus('통신 모듈 로드 실패',0);}})
+      .fail(()=>{if(generation!==sharedGeneration)return;sharedLoading=false;sharedRetryAt=Date.now()+10000;setSharedStatus('통신 모듈 로드 실패',0);});
+    return;
+  }
+  const bytes=new Uint8Array(12);crypto.getRandomValues(bytes);
+  const id=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  sharedRoom=makeSharedRoom({
+    id,root:SHARED_ROOT,now:Date.now,
+    pose:()=>S.phase==='online'?S.player:null,
+    connect:opts=>window.mqtt.connect(SHARED_BROKER,opts),
+    report:(status,count)=>{if(S.phase==='online')setSharedStatus(status,count);}
+  });
+  sharedRoom.start();
+}
+function tickShared(){
+  if(S.phase!=='online'){if(sharedRoom||sharedLoading)disconnectShared();return;}
+  ensureSharedRoom();if(sharedRoom)sharedRoom.tick();
+}
+function drawSharedPlayers(){
+  const now=performance.now(),dt=Math.min(100,now-sharedRenderTime);sharedRenderTime=now;
+  if(!sharedRoom)return;
+  const k=1-Math.exp(-dt/65);
+  for(const p of sharedRoom.peers.values()){
+    if(Math.hypot(p.tx-p.x,p.ty-p.y)>180){p.x=p.tx;p.y=p.ty;}
+    else{p.x=lerp(p.x,p.tx,k);p.y=lerp(p.y,p.ty,k);}
+    drawChar({x:p.x,y:p.y,s:30,col:{b:'#72b9a4',s:'#377d69'},bob:p.bob,lean:0,flash:0,punch:0,face:'plain',gun:p.armed?Math.atan2(p.fy,p.fx):null,muzzle:0});
+    ctx.save();ctx.font=fUI(11);ctx.textAlign='center';
+    ctx.strokeStyle='#eaf2f7';ctx.lineWidth=3;ctx.strokeText('P-'+p.id.slice(0,4).toUpperCase(),p.x,p.y-25);
+    ctx.fillStyle='#174f43';ctx.fillText('P-'+p.id.slice(0,4).toUpperCase(),p.x,p.y-25);ctx.restore();
+  }
+}
+$('#onlineSwitch').on('click',function(){
+  if(S.phase==='online'){disconnectShared();clearGameKeys();drag=null;init(true);startGunCombat(false);updateGameControls();focusGame();}
+  else if(S.phase!=='intro'&&S.phase!=='cut')enterSharedSpace();
+});
+$('#onlineRetry').on('click',function(){disconnectShared();ensureSharedRoom();focusGame();});
+$(window).on('pagehide',disconnectShared);
+setInterval(tickShared,100);
+
 let last=performance.now();
 function loop(now){
   const raw=(now-last)/1000;
